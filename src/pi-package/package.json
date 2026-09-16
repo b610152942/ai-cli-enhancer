@@ -1,0 +1,11 @@
+{
+  "name": "ai-cli-enhancer-pi",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./extensions/status-footer.js"
+    ]
+  }
+}

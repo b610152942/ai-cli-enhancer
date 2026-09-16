@@ -1,0 +1,11 @@
+node_modules/
+coverage/
+.tmp/
+*.log
+.DS_Store
+Thumbs.db
+
+# Machine-local installer state must never be committed.
+state.json
+*.backup.json
+**/runtime/state/
