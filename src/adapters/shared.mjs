@@ -43,22 +43,28 @@ function runtimeCommand(ctx, moduleName, args) {
   return command('node', '-e', loader, '--', ...args);
 }
 
-export function statusLinePatch(ctx, cli) {
+function directRuntimeCommand(ctx, moduleName, args) {
+  return command('node', runtimeFile(ctx, moduleName), ...args);
+}
+
+export function statusLinePatch(ctx, cli, options = {}) {
+  const buildCommand = options.direct ? directRuntimeCommand : runtimeCommand;
   return {
     path: ['statusLine'],
     value: {
       type: 'command',
-      command: runtimeCommand(ctx, 'renderer.mjs', ['--cli', cli]),
+      command: buildCommand(ctx, 'renderer.mjs', ['--cli', cli]),
       padding: 0,
     },
   };
 }
 
-export function commandHook(ctx, cli, event, protocol = '') {
+export function commandHook(ctx, cli, event, protocol = '', options = {}) {
   const marker = `ai-cli-enhancer:${cli}:${event}`;
   const args = ['--cli', cli, '--event', event, '--marker', marker];
   if (protocol) args.push('--protocol', protocol);
-  return { marker, command: runtimeCommand(ctx, 'hook.mjs', args) };
+  const buildCommand = options.direct ? directRuntimeCommand : runtimeCommand;
+  return { marker, command: buildCommand(ctx, 'hook.mjs', args) };
 }
 
 export function claudeStyleHooks(ctx, cli) {

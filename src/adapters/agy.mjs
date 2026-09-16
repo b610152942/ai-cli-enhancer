@@ -7,13 +7,16 @@ export const agy = {
   install(ctx, state) {
     const settingsFile = homeFile('.gemini', 'antigravity-cli', 'settings.json');
     if (isWindowsOwnedSharedConfig(ctx, state, settingsFile)) return;
-    const statusLine = statusLinePatch(ctx, 'Agy');
+    // Agy's Windows command runner does not reliably preserve the nested quotes
+    // used by the cross-platform `node -e` loader.
+    const direct = { direct: true };
+    const statusLine = statusLinePatch(ctx, 'Agy', direct);
     statusLine.value.enabled = true;
     delete statusLine.value.padding;
     installJson(ctx, state, 'settings', settingsFile, [statusLine]);
-    const start = commandHook(ctx, 'Agy', 'SessionStart', 'agy');
-    const stop = commandHook(ctx, 'Agy', 'Stop', 'agy');
-    const attention = commandHook(ctx, 'Agy', 'PreToolUse', 'agy');
+    const start = commandHook(ctx, 'Agy', 'SessionStart', 'agy', direct);
+    const stop = commandHook(ctx, 'Agy', 'Stop', 'agy', direct);
+    const attention = commandHook(ctx, 'Agy', 'PreToolUse', 'agy', direct);
     installJson(ctx, state, 'hooks', homeFile('.gemini', 'config', 'hooks.json'), [{
       path: ['ai-cli-enhancer'],
       value: {

@@ -48,6 +48,9 @@ function readRuntimeState(data, cli) {
 function shortProject(cwd) {
   if (!cwd) return '';
   const normalized = String(cwd).replace(/[\\/]+$/, '').replace(/\\/g, '/');
+  const home = String(process.env.USERPROFILE || process.env.HOME || '')
+    .replace(/[\\/]+$/, '').replace(/\\/g, '/');
+  if (home && normalized.toLowerCase() === home.toLowerCase()) return '';
   return normalized.split('/').filter(Boolean).at(-1) || normalized;
 }
 
@@ -96,6 +99,7 @@ export function normalizeStatus(data, cli = 'cli') {
   const permission = String(valueAt(data, ['permission_mode', 'permissions.mode', 'approval_mode', 'sandbox']) || '');
   const agentCount = numberAt(data, ['agent_count', 'active_agents', 'task_count', 'subagent_count']);
   return {
+    cli,
     state,
     project: shortProject(cwd),
     branch: valueAt(data, ['git_branch', 'git.branch', 'branch']) || git.branch || '',
@@ -120,9 +124,13 @@ function fit(primary, optional, width) {
 }
 
 export function renderStatus(status, width = 120) {
-  const location = status.branch ? `${status.branch}${status.dirty ? '*' : ''}` : status.project;
+  const isAgy = String(status.cli || '').toLowerCase() === 'agy';
+  const location = status.branch
+    ? `${status.branch}${status.dirty ? '*' : ''}`
+    : isAgy ? '' : status.project;
   const model = status.effort ? `${status.model}/${status.effort}` : status.model;
-  const primary = [`[${status.state}] ${location || 'workspace'}`, model || 'model'];
+  const primary = [`[${status.state}]${location ? ` ${location}` : ''}`];
+  if (!isAgy) primary.push(model || 'model');
   const optional = [];
   if (status.contextPercent !== undefined) optional.push(`ctx ${status.contextPercent}%`);
   if (status.agentCount > 0) optional.push(`agents ${status.agentCount}`);

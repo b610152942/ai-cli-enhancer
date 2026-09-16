@@ -10,6 +10,8 @@ test('install, repeat, disable, enable and uninstall remain reversible', { concu
   const home = path.join(root, 'home');
   const installRoot = path.join(root, 'install');
   fs.mkdirSync(path.join(home, '.codebuddy'), { recursive: true });
+  fs.mkdirSync(path.join(home, '.gemini', 'antigravity-cli'), { recursive: true });
+  fs.mkdirSync(path.join(home, '.gemini', 'config'), { recursive: true });
   fs.mkdirSync(path.join(home, '.codex'), { recursive: true });
   fs.mkdirSync(path.join(home, '.gemini'), { recursive: true });
   fs.writeFileSync(path.join(home, '.codebuddy', 'settings.json'), '{"model":"keep"}\n');
@@ -28,6 +30,13 @@ test('install, repeat, disable, enable and uninstall remain reversible', { concu
     const argv = ['node', 'installer', 'install', '--target', 'wsl', '--cli', 'core,pi'];
     await run(argv);
     await run(argv);
+
+    const agy = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'antigravity-cli', 'settings.json'), 'utf8'));
+    assert.match(agy.statusLine.command, /^node .*renderer\.mjs --cli Agy$/);
+    assert.doesNotMatch(agy.statusLine.command, /node -e/);
+    const agyHooks = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'config', 'hooks.json'), 'utf8'));
+    assert.match(agyHooks['ai-cli-enhancer'].SessionStart[0].command, /^node .*hook\.mjs/);
+    assert.doesNotMatch(agyHooks['ai-cli-enhancer'].SessionStart[0].command, /node -e/);
 
     const codebuddyFile = path.join(home, '.codebuddy', 'settings.json');
     let codebuddy = JSON.parse(fs.readFileSync(codebuddyFile, 'utf8'));
