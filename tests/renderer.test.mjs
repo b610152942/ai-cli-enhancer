@@ -44,3 +44,24 @@ test('Agy omits model and directory already shown by its native header', () => {
   });
   assert.equal(line, '[RUN] | ctx 12% | agents 2');
 });
+
+test('renders a sanitized title and exact context tokens when provided', () => {
+  const status = normalizeStatus({
+    session_id: '12345678-abcd',
+    conversation_title: '  Fix auth\nmodule  ',
+    model: { display_name: 'gemini-test' },
+    context_window: {
+      total_input_tokens: 22000,
+      total_output_tokens: 2500,
+      context_window_size: 1000000,
+      used_percentage: 2.45,
+    },
+  }, 'Agy');
+  assert.equal(status.title, 'Fix auth module');
+  assert.equal(renderStatus(status), '[READY] Fix auth module | ctx 25k/1M');
+});
+
+test('falls back to a short session id when no title is available', () => {
+  const status = normalizeStatus({ session_id: 'abcdef12-3456', model: 'test-model' }, 'CodeBuddy');
+  assert.equal(renderStatus(status), '[READY] #abcdef12 | test-model');
+});

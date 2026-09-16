@@ -32,6 +32,40 @@ function numberAt(data, candidates) {
   return Number.isFinite(value) ? value : undefined;
 }
 
+function sumFirstGroup(data, groups) {
+  for (const candidates of groups) {
+    let total = 0;
+    let found = false;
+    for (const candidate of candidates) {
+      const value = numberAt(data, [candidate]);
+      if (value === undefined) continue;
+      total += value;
+      found = true;
+    }
+    if (found) return total;
+  }
+  return undefined;
+}
+
+function compactTokens(value) {
+  if (!Number.isFinite(value) || value < 0) return '';
+  if (value >= 10_000_000) return `${Math.round(value / 1_000_000)}M`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (value >= 10_000) return `${Math.round(value / 1_000)}k`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(Math.round(value));
+}
+
+function cleanTitle(value, limit = 36) {
+  const text = String(value || '').replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
+}
+
+function shortSession(value) {
+  return String(value || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8);
+}
+
 function sessionKey(data, cli) {
   const raw = valueAt(data, ['session_id', 'sessionId', 'conversation_id', 'conversationId']) || `${cli}:${valueAt(data, ['cwd', 'workspace.current_dir', 'workspace.project_dir']) || 'default'}`;
   return crypto.createHash('sha256').update(String(raw)).digest('hex').slice(0, 24);
@@ -96,6 +130,26 @@ export function normalizeStatus(data, cli = 'cli') {
     'context_window.used_percent', 'context.usage_percent', 'context.percentage',
   ]);
   if (context !== undefined && context <= 1) context *= 100;
+  const contextTokens = sumFirstGroup(data, [
+    ['context_window.total_input_tokens', 'context_window.total_output_tokens'],
+    [
+      'context_window.current_usage.input_tokens', 'context_window.current_usage.output_tokens',
+      'context_window.current_usage.cache_creation_input_tokens',
+      'context_window.current_usage.cache_read_input_tokens',
+    ],
+    ['context.tokens', 'context.token_count'],
+  ]);
+  const contextWindow = numberAt(data, [
+    'context_window.context_window_size', 'context_window.size',
+    'context.window_size', 'context.limit',
+  ]);
+  const title = cleanTitle(valueAt(data, [
+    'conversation_title', 'conversationTitle', 'session_title', 'sessionTitle',
+    'session_name', 'sessionName', 'conversation.name', 'session.name',
+  ]));
+  const sessionId = shortSession(valueAt(data, [
+    'session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId',
+  ]));
   const permission = String(valueAt(data, ['permission_mode', 'permissions.mode', 'approval_mode', 'sandbox']) || '');
   const agentCount = numberAt(data, ['agent_count', 'active_agents', 'task_count', 'subagent_count']);
   return {
@@ -106,7 +160,11 @@ export function normalizeStatus(data, cli = 'cli') {
     dirty: Boolean(valueAt(data, ['git_dirty', 'git.dirty', 'dirty']) ?? git.dirty),
     model: String(model),
     effort: String(effort),
+    title,
+    sessionId,
     contextPercent: context === undefined ? undefined : Math.max(0, Math.min(100, Math.round(context))),
+    contextTokens,
+    contextWindow,
     permission,
     agentCount: agentCount && agentCount > 0 ? Math.floor(agentCount) : 0,
   };
@@ -129,10 +187,16 @@ export function renderStatus(status, width = 120) {
     ? `${status.branch}${status.dirty ? '*' : ''}`
     : isAgy ? '' : status.project;
   const model = status.effort ? `${status.model}/${status.effort}` : status.model;
-  const primary = [`[${status.state}]${location ? ` ${location}` : ''}`];
+  const session = status.title || (status.sessionId ? `#${status.sessionId}` : '');
+  const headline = session || location;
+  const primary = [`[${status.state}]${headline ? ` ${headline}` : ''}`];
+  if (session && location) primary.push(location);
   if (!isAgy) primary.push(model || 'model');
   const optional = [];
-  if (status.contextPercent !== undefined) optional.push(`ctx ${status.contextPercent}%`);
+  if (status.contextTokens !== undefined) {
+    const window = status.contextWindow ? `/${compactTokens(status.contextWindow)}` : '';
+    optional.push(`ctx ${compactTokens(status.contextTokens)}${window}`);
+  } else if (status.contextPercent !== undefined) optional.push(`ctx ${status.contextPercent}%`);
   if (status.agentCount > 0) optional.push(`agents ${status.agentCount}`);
   if (/bypass|danger|unrestricted|yolo|never|full/i.test(status.permission)) optional.push('unrestricted');
   return fit(primary, optional, Math.max(24, Number(width) || 120));

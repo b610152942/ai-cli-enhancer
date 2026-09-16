@@ -40,6 +40,41 @@ function truncate(text, width) {
   return width > 3 ? `${text.slice(0, width - 3)}...` : text.slice(0, width);
 }
 
+export function formatTokens(count) {
+  if (!Number.isFinite(count) || count < 0) return '';
+  if (count >= 10_000_000) return `${Math.round(count / 1_000_000)}M`;
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (count >= 10_000) return `${Math.round(count / 1_000)}k`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(Math.round(count));
+}
+
+function addUsage(total, usage) {
+  if (!usage) return total;
+  return total + ['input', 'output', 'cacheRead', 'cacheWrite']
+    .reduce((sum, key) => sum + (Number.isFinite(usage[key]) ? usage[key] : 0), 0);
+}
+
+export function sessionTokens(entries = []) {
+  let total = 0;
+  for (const entry of entries) {
+    if (entry?.type === 'message' && entry.message?.role === 'assistant') {
+      total = addUsage(total, entry.message.usage);
+    } else if (entry?.type === 'message' && entry.message?.role === 'toolResult') {
+      total = addUsage(total, entry.message.usage);
+    } else if (entry?.type === 'branch_summary' || entry?.type === 'compaction') {
+      total = addUsage(total, entry.usage);
+    }
+  }
+  return total;
+}
+
+function cleanTitle(value, limit = 30) {
+  const text = String(value || '').replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
+}
+
 export default function (pi) {
   let state = 'READY';
   let startedAt = 0;
@@ -57,12 +92,22 @@ export default function (pi) {
         invalidate() {},
         render(width) {
           const usage = ctx.getContextUsage();
+          const title = cleanTitle(pi.getSessionName?.());
+          const sessionId = String(ctx.sessionManager.getSessionId?.() || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8);
+          const session = title || (sessionId ? `#${sessionId}` : '');
           const branch = footerData.getGitBranch();
           const project = path.basename(ctx.cwd);
           const model = ctx.model?.id || 'model';
           const effort = ctx.thinkingLevel ? `/${ctx.thinkingLevel}` : '';
-          const parts = [`[${state}]`, branch || project, `${model}${effort}`];
-          if (usage?.percent !== null && usage?.percent !== undefined) parts.push(`ctx ${Math.round(usage.percent)}%`);
+          const parts = [`[${state}]${session ? ` ${session}` : ''}`, branch || project, `${model}${effort}`];
+          if (usage?.tokens !== null && usage?.tokens !== undefined) {
+            const window = usage.contextWindow ? `/${formatTokens(usage.contextWindow)}` : '';
+            parts.push(`ctx ${formatTokens(usage.tokens)}${window}`);
+          } else if (usage?.percent !== null && usage?.percent !== undefined) {
+            parts.push(`ctx ${Math.round(usage.percent)}%`);
+          }
+          const used = sessionTokens(ctx.sessionManager.getEntries?.() || []);
+          if (used > 0) parts.push(`used ${formatTokens(used)}`);
           return [truncate(parts.join(' | '), Math.max(24, width))];
         },
       };

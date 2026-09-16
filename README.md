@@ -33,6 +33,8 @@
 状态、项目或分支、模型优先保留；上下文、agent 数和危险权限只在有真实数据时显示。不会按模型名称猜测上下文窗口，也不常驻显示费用和 token 明细。
 Agy 原生标题已经显示目录和模型，因此其底部状态栏会省略重复字段，仅保留状态、Git 分支（存在时）、上下文和 agent 数。
 
+会话标识与 token 只使用 CLI 明确提供的字段：Agy/Claude 显示原生会话标题，Pi 显示正式 session name，Codex 使用原生 thread title，CodeBuddy/Gemini 在没有标题接口时显示会话 ID。可取得精确上下文 token 时显示 `ctx 24k/200k`；Pi 显示会话累计，Codex 显示原生 token 用量。增强器不会读取对话正文来生成标题，也不会扫描历史记录补算 token。
+
 ## 安装
 
 前置条件：Windows 和目标 WSL 中均已安装 Node.js 20+；只安装某个 CLI 时，该 CLI 本身也应已安装。PowerShell 入口会分别调用 Windows Node 与 WSL Node。

@@ -44,6 +44,12 @@ test('install, repeat, disable, enable and uninstall remain reversible', { concu
     assert.match(codebuddy.statusLine.command, /renderer\.mjs/);
     assert.equal(codebuddy.hooks.Stop.length, 1);
 
+    const codexInstalled = fs.readFileSync(path.join(home, '.codex', 'config.toml'), 'utf8');
+    assert.match(codexInstalled, /thread-title/);
+    assert.match(codexInstalled, /used-tokens/);
+    const geminiInstalled = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'settings.json'), 'utf8'));
+    assert.ok(geminiInstalled.ui.footer.items.includes('session-id'));
+
     const piPackage = path.join(home, '.pi', 'agent', 'ai-cli-enhancer', 'package.json');
     assert.equal(fs.existsSync(piPackage), true);
     await run(['node', 'installer', 'disable', '--target', 'wsl', '--cli', 'pi']);
