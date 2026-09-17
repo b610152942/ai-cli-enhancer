@@ -84,8 +84,20 @@ function shortProject(cwd) {
   const normalized = String(cwd).replace(/[\\/]+$/, '').replace(/\\/g, '/');
   const home = String(process.env.USERPROFILE || process.env.HOME || '')
     .replace(/[\\/]+$/, '').replace(/\\/g, '/');
-  if (home && normalized.toLowerCase() === home.toLowerCase()) return '';
+  if (home && normalized.toLowerCase() === home.toLowerCase()) return '~';
   return normalized.split('/').filter(Boolean).at(-1) || normalized;
+}
+
+function compactAgyModel(model, effort) {
+  let value = String(model || 'model')
+    .replace(/^gemini[-\s]+(?=\d)/i, '')
+    .replace(/[()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (effort && !value.toLowerCase().includes(String(effort).toLowerCase())) {
+    value = `${value} ${effort}`;
+  }
+  return value;
 }
 
 function cachedGit(cwd) {
@@ -152,6 +164,9 @@ export function normalizeStatus(data, cli = 'cli') {
   ]));
   const permission = String(valueAt(data, ['permission_mode', 'permissions.mode', 'approval_mode', 'sandbox']) || '');
   const agentCount = numberAt(data, ['agent_count', 'active_agents', 'task_count', 'subagent_count']);
+  const contextPercent = context === undefined && contextTokens !== undefined && contextWindow > 0
+    ? (contextTokens / contextWindow) * 100
+    : context;
   return {
     cli,
     state,
@@ -162,7 +177,9 @@ export function normalizeStatus(data, cli = 'cli') {
     effort: String(effort),
     title,
     sessionId,
-    contextPercent: context === undefined ? undefined : Math.max(0, Math.min(100, Math.round(context))),
+    contextPercent: contextPercent === undefined
+      ? undefined
+      : Math.max(0, Math.min(100, Math.round(contextPercent))),
     contextTokens,
     contextWindow,
     permission,
@@ -183,20 +200,29 @@ function fit(primary, optional, width) {
 
 export function renderStatus(status, width = 120) {
   const isAgy = String(status.cli || '').toLowerCase() === 'agy';
-  const location = status.branch
-    ? `${status.branch}${status.dirty ? '*' : ''}`
-    : isAgy ? '' : status.project;
+  const directory = `cwd ${status.project || '?'}`;
+  const branch = status.branch ? `${status.branch}${status.dirty ? '*' : ''}` : '';
   const model = status.effort ? `${status.model}/${status.effort}` : status.model;
-  const session = status.title || (status.sessionId ? `#${status.sessionId}` : '');
-  const headline = session || location;
+  const session = status.title || (status.sessionId ? `#${status.sessionId}` : isAgy ? 'new' : '');
+  const headline = session || directory;
   const primary = [`[${status.state}]${headline ? ` ${headline}` : ''}`];
-  if (session && location) primary.push(location);
-  if (!isAgy) primary.push(model || 'model');
+  if (session && !isAgy) primary.push(directory);
   const optional = [];
   if (status.contextTokens !== undefined) {
     const window = status.contextWindow ? `/${compactTokens(status.contextWindow)}` : '';
-    optional.push(`ctx ${compactTokens(status.contextTokens)}${window}`);
+    const percent = status.contextPercent !== undefined ? ` (${status.contextPercent}%)` : '';
+    optional.push(`ctx ${compactTokens(status.contextTokens)}${window}${percent}`);
   } else if (status.contextPercent !== undefined) optional.push(`ctx ${status.contextPercent}%`);
+  if (isAgy) {
+    const lineWidth = Math.max(24, Number(width) || 120);
+    const summary = fit(primary, [compactAgyModel(status.model, status.effort)], lineWidth);
+    const details = [directory, ...optional];
+    const extras = [branch, status.agentCount > 0 ? `agents ${status.agentCount}` : ''];
+    if (/bypass|danger|unrestricted|yolo|never|full/i.test(status.permission)) extras.push('unrestricted');
+    return `${summary}\n${fit(details, extras, lineWidth)}`;
+  }
+  primary.push(model || 'model');
+  if (branch) optional.push(branch);
   if (status.agentCount > 0) optional.push(`agents ${status.agentCount}`);
   if (/bypass|danger|unrestricted|yolo|never|full/i.test(status.permission)) optional.push('unrestricted');
   return fit(primary, optional, Math.max(24, Number(width) || 120));

@@ -8,7 +8,7 @@ test('renders only useful normalized fields without ANSI colors', () => {
     model: 'gpt-5.6-sol', effort: 'xhigh', contextPercent: 27,
     agentCount: 2, permission: 'bypassPermissions',
   }, 120);
-  assert.equal(line, '[RUN] develop* | gpt-5.6-sol/xhigh | ctx 27% | agents 2 | unrestricted');
+  assert.equal(line, '[RUN] cwd demo | gpt-5.6-sol/xhigh | ctx 27% | develop* | agents 2 | unrestricted');
   assert.equal(line.includes('\u001b'), false);
 });
 
@@ -23,26 +23,26 @@ test('keeps one line and drops optional fields on narrow terminals', () => {
   assert.match(line, /^\[WAIT\]/);
 });
 
-test('does not expose the user directory name as a project', () => {
+test('uses a compact home marker for the current directory', () => {
   const previous = process.env.HOME;
   process.env.HOME = '/home/example-user';
   try {
     const status = normalizeStatus({ cwd: '/home/example-user', model: 'gemini-test' }, 'Agy');
-    assert.equal(status.project, '');
-    assert.equal(renderStatus(status), '[READY]');
+    assert.equal(status.project, '~');
+    assert.equal(renderStatus(status), '[READY] new | gemini-test\ncwd ~');
   } finally {
     if (previous === undefined) delete process.env.HOME;
     else process.env.HOME = previous;
   }
 });
 
-test('Agy omits model and directory already shown by its native header', () => {
+test('Agy shows session, directory, context, agents, and a compact model', () => {
   const line = renderStatus({
     cli: 'Agy', state: 'RUN', branch: '', dirty: false, project: 'demo',
     model: 'gemini-test', effort: 'high', contextPercent: 12,
     agentCount: 2, permission: '',
   });
-  assert.equal(line, '[RUN] | ctx 12% | agents 2');
+  assert.equal(line, '[RUN] new | gemini-test high\ncwd demo | ctx 12% | agents 2');
 });
 
 test('renders a sanitized title and exact context tokens when provided', () => {
@@ -58,10 +58,21 @@ test('renders a sanitized title and exact context tokens when provided', () => {
     },
   }, 'Agy');
   assert.equal(status.title, 'Fix auth module');
-  assert.equal(renderStatus(status), '[READY] Fix auth module | ctx 25k/1M');
+  assert.equal(renderStatus(status), '[READY] Fix auth module | gemini-test\ncwd ? | ctx 25k/1M (2%)');
+});
+
+test('Agy keeps session, directory, and exact context on a narrow terminal', () => {
+  const line = renderStatus({
+    cli: 'Agy', state: 'READY', project: '~', branch: '', dirty: false,
+    model: 'Gemini 3.8 Flash (High)', effort: '', title: '', sessionId: '',
+    contextTokens: 0, contextWindow: 1000000, contextPercent: 0,
+    agentCount: 0, permission: '',
+  }, 50);
+  assert.equal(line, '[READY] new | 3.8 Flash High\ncwd ~ | ctx 0/1M (0%)');
+  assert.ok(line.split('\n').every((part) => part.length <= 50));
 });
 
 test('falls back to a short session id when no title is available', () => {
   const status = normalizeStatus({ session_id: 'abcdef12-3456', model: 'test-model' }, 'CodeBuddy');
-  assert.equal(renderStatus(status), '[READY] #abcdef12 | test-model');
+  assert.equal(renderStatus(status), '[READY] #abcdef12 | cwd ? | test-model');
 });

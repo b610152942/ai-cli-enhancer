@@ -99,7 +99,7 @@ export default function (pi) {
           const project = path.basename(ctx.cwd);
           const model = ctx.model?.id || 'model';
           const effort = ctx.thinkingLevel ? `/${ctx.thinkingLevel}` : '';
-          const parts = [`[${state}]${session ? ` ${session}` : ''}`, branch || project, `${model}${effort}`];
+          const parts = [`[${state}]${session ? ` ${session}` : ''}`, `cwd ${project}`, `${model}${effort}`];
           if (usage?.tokens !== null && usage?.tokens !== undefined) {
             const window = usage.contextWindow ? `/${formatTokens(usage.contextWindow)}` : '';
             parts.push(`ctx ${formatTokens(usage.tokens)}${window}`);
@@ -108,6 +108,7 @@ export default function (pi) {
           }
           const used = sessionTokens(ctx.sessionManager.getEntries?.() || []);
           if (used > 0) parts.push(`used ${formatTokens(used)}`);
+          if (branch) parts.push(branch);
           return [truncate(parts.join(' | '), Math.max(24, width))];
         },
       };
