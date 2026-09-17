@@ -72,7 +72,8 @@ cwd api-server | ctx 25k/1M (3%) | main | agents 2
 - 不改变 agent 调度、后台任务和权限决策。
 - hook 最长 3 秒并失败放行；Agy 的决策 hook 始终返回 `allow`。
 - 没有常驻 daemon；Git 查询有缓存和硬超时。
-- Windows 通知不主动激活终端或编辑器窗口，也不播放声音。
+- 普通完成、错误和权限通知不主动激活窗口，也不播放声音。
+- `ask_question`、`agent_needs_input`、`elicitation_dialog` 等必须回答事件会立即显示停留更久的 `needs answer` Toast。增强器不自动聚焦窗口，避免 Windows 限制导致失焦或增加 hook 延迟。
 
 ## CLI 升级后的检查
 

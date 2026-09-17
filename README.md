@@ -27,7 +27,7 @@
 - Agy 的 `PreToolUse` hook 始终返回 `allow`，不改变工具调用结果。
 - 不读取或同步 API Key、账号、会话、历史记录和整份用户配置。
 - 没有常驻 daemon；状态栏每次只读取一次输入，Git 信息最多每 5 秒刷新一次并有 180ms 超时。
-- 通知使用 Windows 原生 Toast，不创建 Tk 窗口、不调用 `focus_force()`、不激活 CLI 窗口，也不播放声音。
+- 通知使用 Windows 原生 Toast，不创建 Tk 窗口、不抢焦，也不播放声音。`ask_question`、`agent_needs_input`、`elicitation_dialog` 等必须回答的事件会立即显示停留更久的 `needs answer` Toast。
 - 普通完成仅在运行至少 30 秒且当前前台不是终端/编辑器工作窗口时通知；等待输入和错误会立即通知，同会话同类事件 30 秒内去重。
 
 所有增强均不使用配色。Agy 在空间足够时使用单行：

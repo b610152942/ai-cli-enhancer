@@ -64,7 +64,8 @@ public static class EnhancerForegroundWindow {
         $app = Get-StartApps | Where-Object { $_.AppID -and $_.Name -match "PowerShell" } | Select-Object -First 1
         if ($app) {
             $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-            $xml.LoadXml("<toast><visual><binding template='ToastGeneric'><text>$title</text><text>$body</text></binding></visual><audio silent='true'/></toast>")
+            $duration = if ($payload.requiresAnswer) { " duration='long'" } else { "" }
+            $xml.LoadXml("<toast$duration><visual><binding template='ToastGeneric'><text>$title</text><text>$body</text></binding></visual><audio silent='true'/></toast>")
             $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
             [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($app.AppID).Show($toast)
             $shown = $true

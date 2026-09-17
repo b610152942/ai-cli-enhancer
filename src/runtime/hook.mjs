@@ -58,6 +58,13 @@ function projectName(data) {
   return cwd.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).at(-1) || '';
 }
 
+export function notificationNeedsAnswer(event, notificationType, isError = false) {
+  if (isError) return false;
+  const lowerEvent = String(event || '').toLowerCase();
+  const lowerType = String(notificationType || '').toLowerCase();
+  return /pretooluse/.test(lowerEvent) || /agent_needs_input|elicitation_dialog|ask_question/.test(lowerType);
+}
+
 function handle(data) {
   const cli = arg('cli', 'CLI');
   const event = arg('event', first(data, ['hook_event_name']) || '');
@@ -75,13 +82,15 @@ function handle(data) {
 
   if (/notification|pretooluse/.test(lower)) {
     const isError = /error|fail/.test(notificationType) || Boolean(data.error);
+    const needsAnswer = notificationNeedsAnswer(event, notificationType, isError);
     writeState(session, { state: isError ? 'ERROR' : 'WAIT', updatedAt: Date.now() });
     dispatchNotification('Notify', {
       session, cli, project,
       category: isError ? 'error' : 'attention',
-      title: isError ? `${cli} error` : `${cli} needs attention`,
+      title: isError ? `${cli} error` : needsAnswer ? `${cli} needs answer` : `${cli} needs attention`,
       body: String(first(data, ['message', 'error', 'toolCall.args.questions.0.question']) || 'Open the CLI to continue.').slice(0, 240),
       immediate: true,
+      requiresAnswer: needsAnswer,
     });
     return;
   }
