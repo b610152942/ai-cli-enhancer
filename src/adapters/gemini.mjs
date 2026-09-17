@@ -8,8 +8,8 @@ export const gemini = {
     const file = homeFile('.gemini', 'settings.json');
     if (isWindowsOwnedSharedConfig(ctx, state, file)) return;
     installJson(ctx, state, 'settings', file, [
-      { path: ['ui', 'footer', 'items'], value: ['git-branch', 'model-name', 'context-used', 'session-id', 'sandbox'] },
-      { path: ['ui', 'footer', 'showLabels'], value: false },
+      { path: ['ui', 'footer', 'items'], value: ['workspace', 'git-branch', 'model-name', 'context-used', 'session-id', 'sandbox'] },
+      { path: ['ui', 'footer', 'showLabels'], value: true },
       { path: ['general', 'enableNotifications'], value: true },
       { path: ['general', 'notificationMethod'], value: 'auto' },
     ]);

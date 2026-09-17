@@ -30,16 +30,16 @@
 - 通知使用 Windows 原生 Toast，不创建 Tk 窗口、不抢焦，也不播放声音。`ask_question`、`agent_needs_input`、`elicitation_dialog` 等必须回答的事件会立即显示停留更久的 `needs answer` Toast。
 - 普通完成仅在运行至少 30 秒且当前前台不是终端/编辑器工作窗口时通知；等待输入和错误会立即通知，同会话同类事件 30 秒内去重。
 
-所有增强均不使用配色。Agy 在空间足够时使用单行：
+状态栏使用克制的语义配色：状态、模型、context 风险、Git/dirty、agent 和危险权限分别着色，目录与分隔符弱化；设置 `NO_COLOR=1` 可关闭自定义配色。Agy 在空间足够时使用单行：
 
 ```text
 [RUN] Fix auth | 3.8 Flash High | cwd api-server | ctx 25k/1M (2%) | develop* | agents 2
 ```
 
 只有全部字段无法放入一行时，才拆成“状态/会话/模型”和“当前目录/context/Git/agent”两行。不会按模型名称猜测上下文窗口，也不常驻显示费用。
-Agy 会显示会话标题（新会话显示 `new`）、当前目录、精确上下文 token 与占用百分比、Git 分支、agent 数和紧凑模型名。
+Agy 会优先显示实时标题，并用完整 session ID 精确查询其 metadata 标题缓存；标题尚未生成时显示 `sid 1d1ed82a`，全新会话显示 `new`。同时显示当前目录、精确上下文 token 与占用百分比、Git 分支、agent 数和紧凑模型名。
 
-会话标识与 token 只使用 CLI 明确提供的字段：Agy/Claude 显示原生会话标题，Pi 显示正式 session name，Codex 使用原生 thread title，CodeBuddy/Gemini 在没有标题接口时显示会话 ID。可取得精确上下文 token 时显示 `ctx 24k/200k (12%)`；百分比缺失时仅根据 CLI 提供的 token 与窗口大小计算。Pi 显示会话累计，Codex 显示原生 token 用量。增强器不会读取对话正文来生成标题，也不会扫描历史记录补算 token。
+会话标识与 token 只使用 CLI 明确提供的字段和标题 metadata：Agy 优先显示实时标题或精确匹配的 metadata 标题，Claude 显示原生会话标题，Pi 显示正式 session name，Codex 使用原生 thread title，CodeBuddy/Gemini 在没有标题接口时显示会话 ID。可取得精确上下文 token 时显示 `ctx 24k/200k (12%)`；百分比缺失时仅根据 CLI 提供的 token 与窗口大小计算。Pi 显示会话累计，Codex 显示原生 token 用量。增强器不会读取对话正文来生成标题，也不会扫描历史记录补算 token。
 
 当前能力：
 
@@ -49,7 +49,7 @@ Agy 会显示会话标题（新会话显示 `new`）、当前目录、精确上�
 | CodeBuddy | 状态、标题或短 session ID、当前目录、模型、context、Git、agent 数、危险权限 |
 | Claude | 状态、会话标题、当前目录、模型、精确 context、Git、agent 数、危险权限 |
 | Codex | 原生 run state、thread title、当前目录、Git、模型/推理、context、used tokens、task progress、permissions；终端标题含 thread title 和项目名 |
-| Gemini | 原生 Git、模型、context、session ID、sandbox |
+| Gemini | 原生当前目录、Git、模型、context、session ID、sandbox；显示 labels 以启用主题主色与风险色 |
 | Pi | session name/短 ID、当前目录、模型、精确 context、会话累计 used tokens、Git |
 
 ## 安装

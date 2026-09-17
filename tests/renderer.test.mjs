@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { normalizeStatus, renderStatus } from '../src/runtime/renderer.mjs';
 
 test('renders only useful normalized fields without ANSI colors', () => {
@@ -21,6 +24,21 @@ test('keeps one line and drops optional fields on narrow terminals', () => {
   assert.equal(line.includes('\n'), false);
   assert.ok(line.length <= 44);
   assert.match(line, /^\[WAIT\]/);
+});
+
+test('adds semantic ANSI colors after fitting without changing visible text', () => {
+  const status = {
+    cli: 'Agy', state: 'WAIT', branch: 'main', dirty: true, project: 'demo',
+    model: 'Gemini 3.8 Flash (High)', effort: '', title: 'Review changes', sessionId: '',
+    contextTokens: 920000, contextWindow: 1000000, contextPercent: 92,
+    agentCount: 2, permission: 'unrestricted',
+  };
+  const plain = renderStatus(status, 160);
+  const colored = renderStatus(status, 160, { colors: true });
+  assert.equal(colored.replace(/\x1b\[[0-9;]*m/g, ''), plain);
+  assert.match(colored, /\x1b\[1m\x1b\[33m\[WAIT\]/);
+  assert.match(colored, /\x1b\[31mctx 920k\/1M \(92%\)/);
+  assert.match(colored, /\x1b\[35m3\.8 Flash High/);
 });
 
 test('uses a compact home marker for the current directory', () => {
@@ -86,4 +104,31 @@ test('Agy keeps session, directory, and exact context on a narrow terminal', () 
 test('falls back to a short session id when no title is available', () => {
   const status = normalizeStatus({ session_id: 'abcdef12-3456', model: 'test-model' }, 'CodeBuddy');
   assert.equal(renderStatus(status), '[READY] #abcdef12 | cwd ? | test-model');
+});
+
+test('Agy reads an exact cached metadata title without reading conversation history', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-title-'));
+  const previous = process.env.AI_CLI_ENHANCER_AGY_HOME;
+  const sessionId = '12345678-abcd-4abc-8def-1234567890ab';
+  try {
+    const cacheDir = path.join(root, '.gemini', 'antigravity-cli', 'cache');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(cacheDir, 'conversation_metadata.json'), JSON.stringify({
+      conversations: { [sessionId]: { summary: { Title: 'Repair Agy display' } } },
+    }));
+    process.env.AI_CLI_ENHANCER_AGY_HOME = root;
+    const status = normalizeStatus({ session_id: sessionId, model: 'gemini-test' }, 'Agy');
+    assert.equal(status.title, 'Repair Agy display');
+    assert.equal(renderStatus(status), '[READY] Repair Agy display | gemini-test | cwd ?');
+  } finally {
+    if (previous === undefined) delete process.env.AI_CLI_ENHANCER_AGY_HOME;
+    else process.env.AI_CLI_ENHANCER_AGY_HOME = previous;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Agy labels its compact session fallback explicitly', () => {
+  const status = normalizeStatus({ session_id: '1d1ed82a-9260-4f9e-ae7a-c5ad1f275cb7', model: 'gemini-test' }, 'Agy');
+  assert.equal(status.sessionId, '1d1ed82a-9260-4f9e-ae7a-c5ad1f275cb7');
+  assert.equal(renderStatus(status), '[READY] sid 1d1ed82a | gemini-test | cwd ?');
 });

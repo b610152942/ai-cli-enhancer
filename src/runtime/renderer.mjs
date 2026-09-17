@@ -66,6 +66,10 @@ function shortSession(value) {
   return String(value || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8);
 }
 
+function cleanSession(value) {
+  return String(value || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 128);
+}
+
 function sessionKey(data, cli) {
   const raw = valueAt(data, ['session_id', 'sessionId', 'conversation_id', 'conversationId']) || `${cli}:${valueAt(data, ['cwd', 'workspace.current_dir', 'workspace.project_dir']) || 'default'}`;
   return crypto.createHash('sha256').update(String(raw)).digest('hex').slice(0, 24);
@@ -77,6 +81,33 @@ function readRuntimeState(data, cli) {
   } catch {
     return {};
   }
+}
+
+function agyMetadataTitle(sessionId) {
+  if (!sessionId) return '';
+  const cacheFile = path.join(stateDir, `agy-title-${crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 24)}.json`);
+  let cached = {};
+  try { cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch { /* refresh below */ }
+
+  const homes = [
+    process.env.AI_CLI_ENHANCER_AGY_HOME,
+    process.env.USERPROFILE,
+    process.env.HOME,
+  ].filter(Boolean);
+  for (const home of [...new Set(homes)]) {
+    const metadataFile = path.join(home, '.gemini', 'antigravity-cli', 'cache', 'conversation_metadata.json');
+    try {
+      const stat = fs.statSync(metadataFile);
+      if (stat.size > 5 * 1024 * 1024) continue;
+      if (cached.metadataFile === metadataFile && cached.mtimeMs === stat.mtimeMs) return cached.title || '';
+      const metadata = JSON.parse(fs.readFileSync(metadataFile, 'utf8'));
+      const title = cleanTitle(metadata?.conversations?.[sessionId]?.summary?.Title);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(cacheFile, JSON.stringify({ metadataFile, mtimeMs: stat.mtimeMs, title }));
+      return title;
+    } catch { /* metadata is optional */ }
+  }
+  return '';
 }
 
 function shortProject(cwd) {
@@ -155,13 +186,14 @@ export function normalizeStatus(data, cli = 'cli') {
     'context_window.context_window_size', 'context_window.size',
     'context.window_size', 'context.limit',
   ]);
-  const title = cleanTitle(valueAt(data, [
+  const sessionId = cleanSession(valueAt(data, [
+    'session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId',
+  ]));
+  const suppliedTitle = cleanTitle(valueAt(data, [
     'conversation_title', 'conversationTitle', 'session_title', 'sessionTitle',
     'session_name', 'sessionName', 'conversation.name', 'session.name',
   ]));
-  const sessionId = shortSession(valueAt(data, [
-    'session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId',
-  ]));
+  const title = suppliedTitle || (String(cli).toLowerCase() === 'agy' ? agyMetadataTitle(sessionId) : '');
   const permission = String(valueAt(data, ['permission_mode', 'permissions.mode', 'approval_mode', 'sandbox']) || '');
   const agentCount = numberAt(data, ['agent_count', 'active_agents', 'task_count', 'subagent_count']);
   const contextPercent = context === undefined && contextTokens !== undefined && contextWindow > 0
@@ -198,12 +230,57 @@ function fit(primary, optional, width) {
   return line;
 }
 
-export function renderStatus(status, width = 120) {
+const ANSI = {
+  reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
+  red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
+  blue: '\x1b[34m', magenta: '\x1b[35m', cyan: '\x1b[36m',
+};
+
+function ansi(code, text) {
+  return `${code}${text}${ANSI.reset}`;
+}
+
+function contextColor(percent) {
+  if (percent === undefined) return ANSI.green;
+  if (percent >= 90) return ANSI.red;
+  if (percent >= 70) return ANSI.yellow;
+  return ANSI.green;
+}
+
+export function colorizeStatus(line, status) {
+  const isAgy = String(status.cli || '').toLowerCase() === 'agy';
+  const branch = status.branch ? `${status.branch}${status.dirty ? '*' : ''}` : '';
+  const models = new Set([
+    status.effort ? `${status.model}/${status.effort}` : status.model,
+    isAgy ? compactAgyModel(status.model, status.effort) : '',
+  ].filter(Boolean));
+  const stateColor = status.state === 'ERROR' ? ANSI.red
+    : status.state === 'WAIT' ? ANSI.yellow
+      : status.state === 'RUN' ? ANSI.cyan : ANSI.green;
+  const separator = ansi(ANSI.dim, ' | ');
+
+  return line.split('\n').map((row, rowIndex) => row.split(' | ').map((part, index) => {
+    if (rowIndex === 0 && index === 0) {
+      return part.replace(/^\[[^\]]+\]/, (value) => ansi(`${ANSI.bold}${stateColor}`, value));
+    }
+    if (part.startsWith('cwd ')) return ansi(ANSI.dim, part);
+    if (part.startsWith('ctx ')) return ansi(contextColor(status.contextPercent), part);
+    if (part.startsWith('agents ')) return ansi(ANSI.blue, part);
+    if (part === 'unrestricted') return ansi(`${ANSI.bold}${ANSI.red}`, part);
+    if (part === branch) return ansi(status.dirty ? ANSI.yellow : ANSI.cyan, part);
+    if (models.has(part)) return ansi(ANSI.magenta, part);
+    return part;
+  }).join(separator)).join('\n');
+}
+
+export function renderStatus(status, width = 120, options = {}) {
   const isAgy = String(status.cli || '').toLowerCase() === 'agy';
   const directory = `cwd ${status.project || '?'}`;
   const branch = status.branch ? `${status.branch}${status.dirty ? '*' : ''}` : '';
   const model = status.effort ? `${status.model}/${status.effort}` : status.model;
-  const session = status.title || (status.sessionId ? `#${status.sessionId}` : isAgy ? 'new' : '');
+  const session = status.title || (status.sessionId
+    ? isAgy ? `sid ${shortSession(status.sessionId)}` : `#${shortSession(status.sessionId)}`
+    : isAgy ? 'new' : '');
   const headline = session || directory;
   const primary = [`[${status.state}]${headline ? ` ${headline}` : ''}`];
   if (session && !isAgy) primary.push(directory);
@@ -220,15 +297,17 @@ export function renderStatus(status, width = 120) {
     const extras = [branch, status.agentCount > 0 ? `agents ${status.agentCount}` : ''];
     if (/bypass|danger|unrestricted|yolo|never|full/i.test(status.permission)) extras.push('unrestricted');
     const singleLine = [...primary, agyModel, ...details, ...extras].filter(Boolean).join(' | ');
-    if (singleLine.length <= lineWidth) return singleLine;
+    if (singleLine.length <= lineWidth) return options.colors ? colorizeStatus(singleLine, status) : singleLine;
     const summary = fit(primary, [agyModel], lineWidth);
-    return `${summary}\n${fit(details, extras, lineWidth)}`;
+    const line = `${summary}\n${fit(details, extras, lineWidth)}`;
+    return options.colors ? colorizeStatus(line, status) : line;
   }
   primary.push(model || 'model');
   if (branch) optional.push(branch);
   if (status.agentCount > 0) optional.push(`agents ${status.agentCount}`);
   if (/bypass|danger|unrestricted|yolo|never|full/i.test(status.permission)) optional.push('unrestricted');
-  return fit(primary, optional, Math.max(24, Number(width) || 120));
+  const line = fit(primary, optional, Math.max(24, Number(width) || 120));
+  return options.colors ? colorizeStatus(line, status) : line;
 }
 
 export function main() {
@@ -236,7 +315,8 @@ export function main() {
   const cli = cliIndex >= 0 ? process.argv[cliIndex + 1] : 'cli';
   const data = readInput();
   const width = numberAt(data, ['terminal.width', 'terminal_width', 'columns']) || process.stdout.columns || process.env.COLUMNS || 120;
-  process.stdout.write(renderStatus(normalizeStatus(data, cli), width));
+  const colors = !Object.hasOwn(process.env, 'NO_COLOR') && process.env.TERM !== 'dumb';
+  process.stdout.write(renderStatus(normalizeStatus(data, cli), width, { colors }));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

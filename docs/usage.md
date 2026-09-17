@@ -6,14 +6,14 @@
 
 | CLI | 底栏内容 |
 | --- | --- |
-| Agy | 状态、会话标题/`new`、模型、当前目录、context token/百分比、Git、agent 数、危险权限 |
+| Agy | 状态、实时或 metadata 会话标题；标题未生成时显示短 `sid`，全新会话显示 `new`；模型、当前目录、context token/百分比、Git、agent 数、危险权限 |
 | CodeBuddy | 状态、标题/短 session ID、当前目录、模型、context、Git、agent 数、危险权限 |
 | Claude | 状态、会话标题/短 session ID、当前目录、模型、精确 context、Git、agent 数、危险权限 |
 | Codex | 原生 run state、thread title、current dir、Git、模型/推理、context、used tokens、task progress、permissions |
-| Gemini | 原生 Git、模型、context、session ID、sandbox |
+| Gemini | 原生当前目录、Git、模型、context、session ID、sandbox；labels 使用当前主题颜色 |
 | Pi | session name/短 ID、当前目录、模型、context、会话累计 used tokens、Git |
 
-字段只在 CLI 提供真实数据时显示。增强器不会读取对话正文生成标题，也不会扫描历史记录估算 token。
+字段只在 CLI 提供真实数据时显示。Agy 标题只按完整 session ID 查询其结构化 metadata，不读取 `history.jsonl`、会话数据库消息或对话正文；增强器也不会扫描历史记录估算 token。
 
 ## 自适应布局
 
@@ -31,6 +31,15 @@ cwd api-server | ctx 25k/1M (3%) | main | agents 2
 ```
 
 其他 CLI 由各自 TUI 决定截断、折行或隐藏低优先级字段。
+
+## 配色
+
+- `READY` 绿色、`RUN` 青色、`WAIT` 黄色、`ERROR` 红色。
+- 模型使用强调色，当前目录和分隔符使用弱化色。
+- context 低于 70% 为绿色，70% 起为黄色，90% 起为红色。
+- dirty Git 和高风险权限使用警示色，agent 数使用辅助强调色。
+- Pi 跟随当前 Pi theme；Codex 和 Gemini 使用各自原生 theme。
+- 设置环境变量 `NO_COLOR=1` 可关闭 Agy、CodeBuddy、Claude 和 Pi 的自定义配色。
 
 ## 状态含义
 

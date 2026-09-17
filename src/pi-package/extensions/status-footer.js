@@ -75,6 +75,29 @@ function cleanTitle(value, limit = 30) {
   return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
 }
 
+function piContextColor(percent) {
+  if (percent === null || percent === undefined || percent < 70) return 'success';
+  if (percent >= 90) return 'error';
+  return 'warning';
+}
+
+export function colorizeFooter(line, theme, details = {}) {
+  if (!theme || Object.hasOwn(process.env, 'NO_COLOR')) return line;
+  const separator = theme.fg('dim', ' | ');
+  return line.split(' | ').map((part, index) => {
+    if (index === 0) {
+      const color = details.state === 'RUN' ? 'accent' : details.state === 'ERROR' ? 'error' : 'success';
+      return part.replace(/^\[[^\]]+\]/, (value) => theme.fg(color, theme.bold(value)));
+    }
+    if (part.startsWith('cwd ')) return theme.fg('dim', part);
+    if (part.startsWith('ctx ')) return theme.fg(piContextColor(details.contextPercent), part);
+    if (part.startsWith('used ')) return theme.fg('muted', part);
+    if (part === details.model) return theme.fg('accent', part);
+    if (part === details.branch) return theme.fg('warning', part);
+    return part;
+  }).join(separator);
+}
+
 export default function (pi) {
   let state = 'READY';
   let startedAt = 0;
@@ -84,7 +107,7 @@ export default function (pi) {
   pi.on('session_start', async (_event, ctx) => {
     currentContext = ctx;
     if (ctx.mode !== 'tui') return;
-    ctx.ui.setFooter((tui, _theme, footerData) => {
+    ctx.ui.setFooter((tui, theme, footerData) => {
       requestRender = () => tui.requestRender();
       const unsubscribe = footerData.onBranchChange(requestRender);
       return {
@@ -99,7 +122,8 @@ export default function (pi) {
           const project = path.basename(ctx.cwd);
           const model = ctx.model?.id || 'model';
           const effort = ctx.thinkingLevel ? `/${ctx.thinkingLevel}` : '';
-          const parts = [`[${state}]${session ? ` ${session}` : ''}`, `cwd ${project}`, `${model}${effort}`];
+          const modelLabel = `${model}${effort}`;
+          const parts = [`[${state}]${session ? ` ${session}` : ''}`, `cwd ${project}`, modelLabel];
           if (usage?.tokens !== null && usage?.tokens !== undefined) {
             const window = usage.contextWindow ? `/${formatTokens(usage.contextWindow)}` : '';
             parts.push(`ctx ${formatTokens(usage.tokens)}${window}`);
@@ -109,7 +133,12 @@ export default function (pi) {
           const used = sessionTokens(ctx.sessionManager.getEntries?.() || []);
           if (used > 0) parts.push(`used ${formatTokens(used)}`);
           if (branch) parts.push(branch);
-          return [truncate(parts.join(' | '), Math.max(24, width))];
+          const line = truncate(parts.join(' | '), Math.max(24, width));
+          return [colorizeFooter(line, theme, {
+            state, model: modelLabel, branch,
+            contextPercent: usage?.percent ?? (usage?.tokens !== null && usage?.tokens !== undefined && usage?.contextWindow
+              ? (usage.tokens / usage.contextWindow) * 100 : undefined),
+          })];
         },
       };
     });

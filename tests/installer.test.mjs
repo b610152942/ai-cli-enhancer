@@ -49,7 +49,9 @@ test('install, repeat, disable, enable and uninstall remain reversible', { concu
     assert.match(codexInstalled, /current-dir/);
     assert.match(codexInstalled, /used-tokens/);
     const geminiInstalled = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'settings.json'), 'utf8'));
+    assert.ok(geminiInstalled.ui.footer.items.includes('workspace'));
     assert.ok(geminiInstalled.ui.footer.items.includes('session-id'));
+    assert.equal(geminiInstalled.ui.footer.showLabels, true);
 
     const piPackage = path.join(home, '.pi', 'agent', 'ai-cli-enhancer', 'package.json');
     assert.equal(fs.existsSync(piPackage), true);
