@@ -215,10 +215,13 @@ export function renderStatus(status, width = 120) {
   } else if (status.contextPercent !== undefined) optional.push(`ctx ${status.contextPercent}%`);
   if (isAgy) {
     const lineWidth = Math.max(24, Number(width) || 120);
-    const summary = fit(primary, [compactAgyModel(status.model, status.effort)], lineWidth);
+    const agyModel = compactAgyModel(status.model, status.effort);
     const details = [directory, ...optional];
     const extras = [branch, status.agentCount > 0 ? `agents ${status.agentCount}` : ''];
     if (/bypass|danger|unrestricted|yolo|never|full/i.test(status.permission)) extras.push('unrestricted');
+    const singleLine = [...primary, agyModel, ...details, ...extras].filter(Boolean).join(' | ');
+    if (singleLine.length <= lineWidth) return singleLine;
+    const summary = fit(primary, [agyModel], lineWidth);
     return `${summary}\n${fit(details, extras, lineWidth)}`;
   }
   primary.push(model || 'model');

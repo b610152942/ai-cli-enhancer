@@ -29,7 +29,7 @@ test('uses a compact home marker for the current directory', () => {
   try {
     const status = normalizeStatus({ cwd: '/home/example-user', model: 'gemini-test' }, 'Agy');
     assert.equal(status.project, '~');
-    assert.equal(renderStatus(status), '[READY] new | gemini-test\ncwd ~');
+    assert.equal(renderStatus(status), '[READY] new | gemini-test | cwd ~');
   } finally {
     if (previous === undefined) delete process.env.HOME;
     else process.env.HOME = previous;
@@ -42,7 +42,7 @@ test('Agy shows session, directory, context, agents, and a compact model', () =>
     model: 'gemini-test', effort: 'high', contextPercent: 12,
     agentCount: 2, permission: '',
   });
-  assert.equal(line, '[RUN] new | gemini-test high\ncwd demo | ctx 12% | agents 2');
+  assert.equal(line, '[RUN] new | gemini-test high | cwd demo | ctx 12% | agents 2');
 });
 
 test('renders a sanitized title and exact context tokens when provided', () => {
@@ -58,7 +58,18 @@ test('renders a sanitized title and exact context tokens when provided', () => {
     },
   }, 'Agy');
   assert.equal(status.title, 'Fix auth module');
-  assert.equal(renderStatus(status), '[READY] Fix auth module | gemini-test\ncwd ? | ctx 25k/1M (2%)');
+  assert.equal(renderStatus(status), '[READY] Fix auth module | gemini-test | cwd ? | ctx 25k/1M (2%)');
+});
+
+test('Agy uses one line when all conversation details fit', () => {
+  const line = renderStatus({
+    cli: 'Agy', state: 'RUN', project: 'demo', branch: 'main', dirty: false,
+    model: 'Gemini 3.8 Flash (High)', effort: '', title: 'Fix auth', sessionId: '',
+    contextTokens: 25000, contextWindow: 1000000, contextPercent: 3,
+    agentCount: 2, permission: '',
+  }, 120);
+  assert.equal(line, '[RUN] Fix auth | 3.8 Flash High | cwd demo | ctx 25k/1M (3%) | main | agents 2');
+  assert.equal(line.includes('\n'), false);
 });
 
 test('Agy keeps session, directory, and exact context on a narrow terminal', () => {
