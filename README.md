@@ -11,6 +11,12 @@
 
 暂不处理 Hermes（原生显示已足够）、Grok、Coze、OpenCode、Qwen 和 Kimi。
 
+## 文档
+
+- [安装手册](docs/installation.md)：首次安装、按 CLI 安装、Windows/WSL 双端安装和第二台电脑部署。
+- [使用手册](docs/usage.md)：底栏字段、管理命令、升级流程和常见问题。
+- [卸载手册](docs/uninstallation.md)：临时停用、单独卸载、完整清理和冲突处理。
+
 ## 设计边界
 
 本项目只使用各 CLI 已公开的状态栏、footer、hook 或 package 扩展点：
@@ -98,10 +104,10 @@ cd D:\ai-coding\ai-cli-enhancer
 
 ## 第二台电脑
 
-将仓库推送到私有 Git 后，在另一台电脑克隆并执行同一安装命令即可：
+在另一台电脑克隆并执行同一安装命令即可：
 
 ```powershell
-git clone <private-repository-url> D:\ai-coding\ai-cli-enhancer
+git clone git@codeup.aliyun.com:667d24b4375bb2acf8b3123c/utils/ai-cli-enhancer.git D:\ai-coding\ai-cli-enhancer
 cd D:\ai-coding\ai-cli-enhancer
 .\enhance.ps1 install -Cli core,pi -Target windows,wsl
 ```
