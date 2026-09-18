@@ -70,9 +70,50 @@ function handle(data) {
   const event = arg('event', first(data, ['hook_event_name']) || '');
   const session = identity(data, cli);
   const project = projectName(data);
-  const activeAgents = Number(first(data, ['agent_count', 'active_agents', 'task_count', 'subagent_count']) || 0);
+  let activeAgents = Number(first(data, [
+    'agent_count', 'agentCount',
+    'active_agents', 'activeAgents',
+    'running_agents', 'runningAgents',
+    'subagent_count', 'subagentCount',
+    'active_subagents', 'activeSubagents',
+    'task_count', 'taskCount',
+    'active_tasks', 'activeTasks',
+  ]) || 0);
+  if (!activeAgents) {
+    const list = first(data, ['subagents', 'sub_agents', 'active_subagents', 'agents', 'tasks']);
+    if (Array.isArray(list)) {
+      activeAgents = list.filter((item) => {
+        if (typeof item === 'object' && item !== null) {
+          const st = String(item.state || item.status || item.run_state || 'running').toLowerCase();
+          return !/complete|completed|done|finished|settled|stopped|stop|fail|failed|error/i.test(st);
+        }
+        return true;
+      }).length;
+    }
+  }
   const lower = String(event).toLowerCase();
   const notificationType = String(first(data, ['notification_type', 'type', 'reason']) || '').toLowerCase();
+
+  if (/subagent_start|subagentstart/.test(lower)) {
+    const previous = readState(session);
+    const count = activeAgents > 0 ? activeAgents : (previous.agentCount || 0) + 1;
+    writeState(session, {
+      state: 'RUN', agentCount: count,
+      startedAt: previous.startedAt || previous.updatedAt || Date.now(), updatedAt: Date.now(),
+    });
+    return;
+  }
+
+  if (/subagent_stop|subagentstop|subagent_end/.test(lower)) {
+    const previous = readState(session);
+    const count = activeAgents > 0 ? activeAgents : Math.max(0, (previous.agentCount || 1) - 1);
+    writeState(session, {
+      state: count > 0 ? 'RUN' : (previous.state || 'RUN'),
+      agentCount: count,
+      startedAt: previous.startedAt || previous.updatedAt || Date.now(), updatedAt: Date.now(),
+    });
+    return;
+  }
 
   if (/userprompt|beforeagent|agent_start|sessionstart/.test(lower)) {
     const now = Date.now();

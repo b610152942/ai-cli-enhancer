@@ -225,6 +225,46 @@ function cachedGit(cwd) {
   return result;
 }
 
+export function extractAgentCount(data, runtime = {}) {
+  const direct = numberAt(data, [
+    'agent_count', 'agentCount',
+    'active_agents', 'activeAgents',
+    'running_agents', 'runningAgents',
+    'subagent_count', 'subagentCount',
+    'active_subagents', 'activeSubagents',
+    'running_subagents', 'runningSubagents',
+    'task_count', 'taskCount',
+    'active_tasks', 'activeTasks',
+    'running_tasks', 'runningTasks',
+  ]);
+  if (direct !== undefined && direct > 0) return Math.floor(direct);
+
+  const arrayCandidates = [
+    'subagents', 'sub_agents',
+    'active_subagents', 'running_subagents',
+    'agents', 'active_agents', 'running_agents',
+    'tasks', 'active_tasks', 'running_tasks',
+  ];
+  for (const candidate of arrayCandidates) {
+    const list = valueAt(data, [candidate]);
+    if (Array.isArray(list) && list.length > 0) {
+      const active = list.filter((item) => {
+        if (typeof item === 'object' && item !== null) {
+          const st = String(item.state || item.status || item.run_state || 'running').toLowerCase();
+          return !/complete|completed|done|finished|settled|stopped|stop|fail|failed|error/i.test(st);
+        }
+        return true;
+      }).length;
+      if (active > 0) return active;
+    }
+  }
+
+  if (typeof runtime?.agentCount === 'number' && runtime.agentCount > 0) {
+    return Math.floor(runtime.agentCount);
+  }
+  return 0;
+}
+
 export function normalizeStatus(data, cli = 'cli') {
   const runtime = readRuntimeState(data, cli);
   const cwd = valueAt(data, ['workspace.current_dir', 'workspace.project_dir', 'cwd', 'current_dir']);
@@ -267,7 +307,7 @@ export function normalizeStatus(data, cli = 'cli') {
   ]));
   const title = suppliedTitle || (String(cli).toLowerCase() === 'agy' ? agyMetadataTitle(sessionId) : '');
   const permission = String(valueAt(data, ['permission_mode', 'permissions.mode', 'approval_mode', 'sandbox']) || '');
-  const agentCount = numberAt(data, ['agent_count', 'active_agents', 'task_count', 'subagent_count']);
+  const agentCount = extractAgentCount(data, runtime);
   const contextPercent = context === undefined && contextTokens !== undefined && contextWindow > 0
     ? (contextTokens / contextWindow) * 100
     : context;

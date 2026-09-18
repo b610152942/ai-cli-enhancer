@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { normalizeStatus, renderStatus, formatDirectory } from '../src/runtime/renderer.mjs';
+import { normalizeStatus, renderStatus, formatDirectory, extractAgentCount } from '../src/runtime/renderer.mjs';
 
 test('renders only useful normalized fields without ANSI colors', () => {
   const line = renderStatus({
@@ -264,4 +264,36 @@ test('Agy reads title or preview from conversation_summaries.db', async () => {
     else process.env.AI_CLI_ENHANCER_AGY_HOME = previous;
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('extractAgentCount parses direct counts, array lists, and active states', () => {
+  // Direct count numbers
+  assert.equal(extractAgentCount({ agent_count: 3 }), 3);
+  assert.equal(extractAgentCount({ subagentCount: 2 }), 2);
+  assert.equal(extractAgentCount({ active_tasks: 4 }), 4);
+
+  // Array of subagent objects (filter out finished/stopped ones)
+  const payloadWithArray = {
+    subagents: [
+      { id: 'sub-1', state: 'running' },
+      { id: 'sub-2', state: 'completed' },
+      { id: 'sub-3', status: 'active' },
+      { id: 'sub-4', status: 'failed' },
+    ],
+  };
+  assert.equal(extractAgentCount(payloadWithArray), 2);
+
+  // Runtime fallback
+  assert.equal(extractAgentCount({}, { agentCount: 5 }), 5);
+});
+
+test('normalizeStatus accurately displays running subagents in statusLine', () => {
+  const status = normalizeStatus({
+    session_id: '01234567-89ab',
+    model: 'claude-3-7-sonnet',
+    subagents: [{ id: 'sub-1', state: 'running' }, { id: 'sub-2', state: 'busy' }],
+  }, 'Claude Code');
+  assert.equal(status.agentCount, 2);
+  const rendered = renderStatus(status);
+  assert.ok(rendered.includes('agents 2'));
 });

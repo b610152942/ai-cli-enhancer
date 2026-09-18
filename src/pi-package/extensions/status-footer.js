@@ -108,6 +108,7 @@ export function colorizeFooter(line, theme, details = {}) {
     if (part === details.directory || part.startsWith('cwd ')) return theme.fg('dim', part);
     if (part.startsWith('ctx ')) return theme.fg(piContextColor(details.contextPercent), part);
     if (part.startsWith('used ')) return theme.fg('muted', part);
+    if (part.startsWith('agents ')) return theme.fg('accent', part);
     if (part === details.model) return theme.fg('accent', part);
     if (part === details.branch) return theme.fg('warning', part);
     return part;
