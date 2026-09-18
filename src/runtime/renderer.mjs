@@ -51,7 +51,6 @@ function compactTokens(value) {
   if (!Number.isFinite(value) || value < 0) return '';
   if (value >= 10_000_000) return `${Math.round(value / 1_000_000)}M`;
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-  if (value >= 10_000) return `${Math.round(value / 1_000)}k`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1).replace(/\.0$/, '')}k`;
   return String(Math.round(value));
 }
@@ -173,19 +172,24 @@ export function normalizeStatus(data, cli = 'cli') {
     'context_window.used_percent', 'context.usage_percent', 'context.percentage',
   ]);
   if (context !== undefined && context <= 1) context *= 100;
-  const contextTokens = sumFirstGroup(data, [
-    ['context_window.total_input_tokens', 'context_window.total_output_tokens'],
+  let contextTokens = sumFirstGroup(data, [
     [
-      'context_window.current_usage.input_tokens', 'context_window.current_usage.output_tokens',
-      'context_window.current_usage.cache_creation_input_tokens',
+      'context_window.current_usage.input_tokens',
       'context_window.current_usage.cache_read_input_tokens',
+      'context_window.current_usage.cache_creation_input_tokens',
     ],
-    ['context.tokens', 'context.token_count'],
+    ['context.tokens', 'context.token_count', 'context_tokens', 'context_window.context_tokens'],
+    ['context_window.input_tokens'],
+    ['context_window.total_input_tokens', 'context_window.total_output_tokens'],
+    ['context_window.total_input_tokens'],
   ]);
   const contextWindow = numberAt(data, [
     'context_window.context_window_size', 'context_window.size',
     'context.window_size', 'context.limit',
   ]);
+  if (contextTokens !== undefined && contextWindow > 0 && contextTokens > contextWindow && context !== undefined) {
+    contextTokens = Math.round(contextWindow * (context / 100));
+  }
   const sessionId = cleanSession(valueAt(data, [
     'session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId',
   ]));

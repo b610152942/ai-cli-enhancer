@@ -42,15 +42,19 @@ test('adds semantic ANSI colors after fitting without changing visible text', ()
 });
 
 test('uses a compact home marker for the current directory', () => {
-  const previous = process.env.HOME;
+  const previousHome = process.env.HOME;
+  const previousProfile = process.env.USERPROFILE;
   process.env.HOME = '/home/example-user';
+  delete process.env.USERPROFILE;
   try {
     const status = normalizeStatus({ cwd: '/home/example-user', model: 'gemini-test' }, 'Agy');
     assert.equal(status.project, '~');
     assert.equal(renderStatus(status), '[READY] new | gemini-test | cwd ~');
   } finally {
-    if (previous === undefined) delete process.env.HOME;
-    else process.env.HOME = previous;
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = previousProfile;
   }
 });
 
@@ -76,7 +80,74 @@ test('renders a sanitized title and exact context tokens when provided', () => {
     },
   }, 'Agy');
   assert.equal(status.title, 'Fix auth module');
-  assert.equal(renderStatus(status), '[READY] Fix auth module | gemini-test | cwd ? | ctx 25k/1M (2%)');
+  assert.equal(renderStatus(status), '[READY] Fix auth module | gemini-test | cwd ? | ctx 24.5k/1M (2%)');
+});
+
+test('CodeBuddy accurately renders current_usage (136.7k) instead of cumulative session total (4.2M)', () => {
+  const status = normalizeStatus({
+    session_id: '01a0aedd-9201-7ef8-9cdd-dc582e447009',
+    conversation_title: 'Add Amap MCP config to CodeBuddy',
+    cwd: 'D:\\AI项目开发\\国庆',
+    model: { id: 'deepseek-v4-pro', display_name: 'Deepseek-V4-Pro' },
+    permission_mode: 'unrestricted',
+    context_window: {
+      total_input_tokens: 4153557,
+      total_output_tokens: 45296,
+      context_window_size: 1000000,
+      used_percentage: 14,
+      current_usage: {
+        input_tokens: 136698,
+        output_tokens: 2723,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      },
+    },
+  }, 'CodeBuddy');
+  assert.equal(status.contextTokens, 136698);
+  assert.equal(status.contextPercent, 14);
+  assert.equal(renderStatus(status), '[READY] Add Amap MCP config to CodeBuddy | cwd 国庆 | Deepseek-V4-Pro | ctx 136.7k/1M (14%) | unrestricted');
+});
+
+test('Claude Code includes cached tokens in current_usage for context calculation', () => {
+  const status = normalizeStatus({
+    session_id: 'claude-test-session',
+    conversation_title: 'Implement search',
+    cwd: '/workspace/project',
+    model: { display_name: 'claude-3-7-sonnet' },
+    context_window: {
+      total_input_tokens: 1800000,
+      total_output_tokens: 20000,
+      context_window_size: 200000,
+      used_percentage: 27,
+      current_usage: {
+        input_tokens: 4000,
+        output_tokens: 800,
+        cache_creation_input_tokens: 1000,
+        cache_read_input_tokens: 48500,
+      },
+    },
+  }, 'Claude');
+  assert.equal(status.contextTokens, 53500);
+  assert.equal(status.contextPercent, 27);
+  assert.equal(renderStatus(status), '[READY] Implement search | cwd project | claude-3-7-sonnet | ctx 53.5k/200k (27%)');
+});
+
+test('Defends against cumulative overflow when only total_input_tokens exceeds context_window_size', () => {
+  const status = normalizeStatus({
+    session_id: 'overflow-test',
+    conversation_title: 'Overflow check',
+    cwd: '/workspace/test',
+    model: { display_name: 'test-model' },
+    context_window: {
+      total_input_tokens: 3500000,
+      total_output_tokens: 50000,
+      context_window_size: 200000,
+      used_percentage: 15,
+    },
+  }, 'CodeBuddy');
+  assert.equal(status.contextTokens, 30000); // 200000 * 15%
+  assert.equal(status.contextPercent, 15);
+  assert.equal(renderStatus(status), '[READY] Overflow check | cwd test | test-model | ctx 30k/200k (15%)');
 });
 
 test('Agy uses one line when all conversation details fit', () => {
