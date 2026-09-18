@@ -297,3 +297,23 @@ test('normalizeStatus accurately displays running subagents in statusLine', () =
   const rendered = renderStatus(status);
   assert.ok(rendered.includes('agents 2'));
 });
+
+test('normalizeStatus prioritizes session-level model override over global fallback', () => {
+  // session_model explicit property
+  const status1 = normalizeStatus({
+    session_id: 'cb-1',
+    session_model: 'glm-5.3',
+    model: { id: 'deepseek-v4-pro', display_name: 'DeepSeek V4 Pro' },
+  }, 'CodeBuddy');
+  assert.equal(status1.model, 'glm-5.3');
+
+  // session.requestOptions.model property
+  const status2 = normalizeStatus({
+    session_id: 'cb-2',
+    session: {
+      requestOptions: { model: 'deepseek-v4.1-flash' },
+    },
+    model: { id: 'deepseek-v4-pro', display_name: 'DeepSeek V4 Pro' },
+  }, 'CodeBuddy');
+  assert.equal(status2.model, 'deepseek-v4.1-flash');
+});

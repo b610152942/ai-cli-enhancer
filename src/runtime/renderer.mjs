@@ -273,7 +273,18 @@ export function normalizeStatus(data, cli = 'cli') {
   const state = /ERROR|FAIL/.test(rawState) ? 'ERROR'
     : /WAIT|INPUT|PERMISSION|BLOCK/.test(rawState) ? 'WAIT'
       : /RUN|WORK|THINK|BUSY|TOOL|STREAM/.test(rawState) ? 'RUN' : 'READY';
-  const model = valueAt(data, ['model.display_name', 'model.id', 'model_name', 'model', 'current_model']) || runtime.model || '';
+  const model = valueAt(data, [
+    'session_model',
+    'session.model',
+    'override_model',
+    'session.requestOptions.model',
+    'session.options.model',
+    'model.display_name',
+    'model.id',
+    'model_name',
+    'model',
+    'current_model',
+  ]) || runtime.model || '';
   const effort = valueAt(data, ['reasoning_effort', 'effort', 'thinking_level', 'model.reasoning_effort']) || '';
   let context = numberAt(data, [
     'context_percent', 'context_used_percent', 'context_window.used_percentage',
