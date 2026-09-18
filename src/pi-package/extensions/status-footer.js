@@ -80,6 +80,23 @@ function piContextColor(percent) {
   return 'warning';
 }
 
+export function formatDirectory(cwd) {
+  if (!cwd) return '';
+  const normalized = String(cwd).replace(/[\\/]+$/, '').replace(/\\/g, '/');
+  const homeCandidates = [
+    process.env.HOME,
+    process.env.USERPROFILE,
+  ].filter(Boolean).map((h) => String(h).replace(/[\\/]+$/, '').replace(/\\/g, '/'));
+
+  for (const home of homeCandidates) {
+    if (normalized.toLowerCase() === home.toLowerCase()) return '~';
+    if (normalized.toLowerCase().startsWith(`${home.toLowerCase()}/`)) {
+      return `~${normalized.slice(home.length)}`;
+    }
+  }
+  return normalized;
+}
+
 export function colorizeFooter(line, theme, details = {}) {
   if (!theme || Object.hasOwn(process.env, 'NO_COLOR')) return line;
   const separator = theme.fg('dim', ' | ');
@@ -88,7 +105,7 @@ export function colorizeFooter(line, theme, details = {}) {
       const color = details.state === 'RUN' ? 'accent' : details.state === 'ERROR' ? 'error' : 'success';
       return part.replace(/^\[[^\]]+\]/, (value) => theme.fg(color, theme.bold(value)));
     }
-    if (part.startsWith('cwd ')) return theme.fg('dim', part);
+    if (part === details.directory || part.startsWith('cwd ')) return theme.fg('dim', part);
     if (part.startsWith('ctx ')) return theme.fg(piContextColor(details.contextPercent), part);
     if (part.startsWith('used ')) return theme.fg('muted', part);
     if (part === details.model) return theme.fg('accent', part);
@@ -118,11 +135,11 @@ export default function (pi) {
           const sessionId = String(ctx.sessionManager.getSessionId?.() || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8);
           const session = title || (sessionId ? `#${sessionId}` : '');
           const branch = footerData.getGitBranch();
-          const project = path.basename(ctx.cwd);
+          const directory = formatDirectory(ctx.cwd);
           const model = ctx.model?.id || 'model';
           const effort = ctx.thinkingLevel ? `/${ctx.thinkingLevel}` : '';
           const modelLabel = `${model}${effort}`;
-          const parts = [`[${state}]${session ? ` ${session}` : ''}`, `cwd ${project}`, modelLabel];
+          const parts = [`[${state}]${session ? ` ${session}` : ''}`, directory, modelLabel];
           if (usage?.tokens !== null && usage?.tokens !== undefined) {
             const window = usage.contextWindow ? `/${formatTokens(usage.contextWindow)}` : '';
             parts.push(`ctx ${formatTokens(usage.tokens)}${window}`);
@@ -134,7 +151,7 @@ export default function (pi) {
           if (branch) parts.push(branch);
           const line = truncate(parts.join(' | '), Math.max(24, width));
           return [colorizeFooter(line, theme, {
-            state, model: modelLabel, branch,
+            state, model: modelLabel, branch, directory,
             contextPercent: usage?.percent ?? (usage?.tokens !== null && usage?.tokens !== undefined && usage?.contextWindow
               ? (usage.tokens / usage.contextWindow) * 100 : undefined),
           })];
@@ -142,6 +159,7 @@ export default function (pi) {
       };
     });
   });
+
 
   pi.on('agent_start', async (_event, ctx) => {
     state = 'RUN';

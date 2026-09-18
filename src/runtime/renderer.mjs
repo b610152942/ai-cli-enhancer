@@ -5,6 +5,13 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+let DatabaseSync = null;
+try {
+  ({ DatabaseSync } = await import('node:sqlite'));
+} catch {
+  // node:sqlite unsupported or unavailable
+}
+
 const runtimeDir = path.dirname(fileURLToPath(import.meta.url));
 const stateDir = path.join(runtimeDir, 'state');
 
@@ -82,6 +89,24 @@ function readRuntimeState(data, cli) {
   }
 }
 
+function queryAgySqlite(dbFile, sessionId) {
+  if (!DatabaseSync || !fs.existsSync(dbFile)) return '';
+  try {
+    const db = new DatabaseSync(dbFile, { readOnly: true });
+    try {
+      const stmt = db.prepare('SELECT title, preview FROM conversation_summaries WHERE conversation_id = ?');
+      const row = stmt.get(sessionId);
+      if (row) {
+        const found = cleanTitle(row.title) || cleanTitle(row.preview);
+        if (found) return found;
+      }
+    } finally {
+      db.close();
+    }
+  } catch { /* ignore db read errors */ }
+  return '';
+}
+
 function agyMetadataTitle(sessionId) {
   if (!sessionId) return '';
   const cacheFile = path.join(stateDir, `agy-title-${crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 24)}.json`);
@@ -93,30 +118,73 @@ function agyMetadataTitle(sessionId) {
     process.env.USERPROFILE,
     process.env.HOME,
   ].filter(Boolean);
+
+  // In WSL environment, also check Windows host home if accessible
+  if (process.platform === 'linux') {
+    try {
+      if (fs.existsSync('/mnt/c/Users')) {
+        const users = fs.readdirSync('/mnt/c/Users').filter((u) => !['Public', 'Default', 'Default User', 'All Users'].includes(u));
+        for (const u of users) {
+          homes.push(`/mnt/c/Users/${u}`);
+        }
+      }
+    } catch { /* ignore fs check errors */ }
+  }
+
   for (const home of [...new Set(homes)]) {
+    // 1. Try real-time SQLite database first
+    const dbFile = path.join(home, '.gemini', 'antigravity-cli', 'conversation_summaries.db');
+    try {
+      const stat = fs.statSync(dbFile);
+      if (cached.sourceFile === dbFile && cached.mtimeMs === stat.mtimeMs && cached.title) {
+        return cached.title;
+      }
+      const title = queryAgySqlite(dbFile, sessionId);
+      if (title) {
+        fs.mkdirSync(stateDir, { recursive: true });
+        fs.writeFileSync(cacheFile, JSON.stringify({ sourceFile: dbFile, mtimeMs: stat.mtimeMs, title }));
+        return title;
+      }
+    } catch { /* sqlite db is optional */ }
+
+    // 2. Fallback to conversation_metadata.json
     const metadataFile = path.join(home, '.gemini', 'antigravity-cli', 'cache', 'conversation_metadata.json');
     try {
       const stat = fs.statSync(metadataFile);
       if (stat.size > 5 * 1024 * 1024) continue;
-      if (cached.metadataFile === metadataFile && cached.mtimeMs === stat.mtimeMs) return cached.title || '';
+      if (cached.sourceFile === metadataFile && cached.mtimeMs === stat.mtimeMs && cached.title) {
+        return cached.title;
+      }
       const metadata = JSON.parse(fs.readFileSync(metadataFile, 'utf8'));
-      const title = cleanTitle(metadata?.conversations?.[sessionId]?.summary?.Title);
-      fs.mkdirSync(stateDir, { recursive: true });
-      fs.writeFileSync(cacheFile, JSON.stringify({ metadataFile, mtimeMs: stat.mtimeMs, title }));
-      return title;
+      const conv = metadata?.conversations?.[sessionId];
+      const title = cleanTitle(conv?.summary?.Title) || cleanTitle(conv?.summary?.Preview);
+      if (title) {
+        fs.mkdirSync(stateDir, { recursive: true });
+        fs.writeFileSync(cacheFile, JSON.stringify({ sourceFile: metadataFile, mtimeMs: stat.mtimeMs, title }));
+        return title;
+      }
     } catch { /* metadata is optional */ }
   }
   return '';
 }
 
-function shortProject(cwd) {
+export function formatDirectory(cwd) {
   if (!cwd) return '';
   const normalized = String(cwd).replace(/[\\/]+$/, '').replace(/\\/g, '/');
-  const home = String(process.env.USERPROFILE || process.env.HOME || '')
-    .replace(/[\\/]+$/, '').replace(/\\/g, '/');
-  if (home && normalized.toLowerCase() === home.toLowerCase()) return '~';
-  return normalized.split('/').filter(Boolean).at(-1) || normalized;
+  const homeCandidates = [
+    process.env.HOME,
+    process.env.USERPROFILE,
+  ].filter(Boolean).map((h) => String(h).replace(/[\\/]+$/, '').replace(/\\/g, '/'));
+
+  for (const home of homeCandidates) {
+    if (normalized.toLowerCase() === home.toLowerCase()) return '~';
+    if (normalized.toLowerCase().startsWith(`${home.toLowerCase()}/`)) {
+      return `~${normalized.slice(home.length)}`;
+    }
+  }
+  return normalized;
 }
+
 
 function compactAgyModel(model, effort) {
   let value = String(model || 'model')
@@ -203,10 +271,12 @@ export function normalizeStatus(data, cli = 'cli') {
   const contextPercent = context === undefined && contextTokens !== undefined && contextWindow > 0
     ? (contextTokens / contextWindow) * 100
     : context;
+  const directory = formatDirectory(cwd);
   return {
     cli,
     state,
-    project: shortProject(cwd),
+    directory,
+    project: directory,
     branch: valueAt(data, ['git_branch', 'git.branch', 'branch']) || git.branch || '',
     dirty: Boolean(valueAt(data, ['git_dirty', 'git.dirty', 'dirty']) ?? git.dirty),
     model: String(model),
@@ -267,7 +337,7 @@ export function colorizeStatus(line, status) {
     if (rowIndex === 0 && index === 0) {
       return part.replace(/^\[[^\]]+\]/, (value) => ansi(`${ANSI.bold}${stateColor}`, value));
     }
-    if (part.startsWith('cwd ')) return ansi(ANSI.dim, part);
+    if (part === status.directory || part === status.project || part.startsWith('cwd ')) return ansi(ANSI.dim, part);
     if (part.startsWith('ctx ')) return ansi(contextColor(status.contextPercent), part);
     if (part.startsWith('agents ')) return ansi(ANSI.blue, part);
     if (part === 'unrestricted') return ansi(`${ANSI.bold}${ANSI.red}`, part);
@@ -279,7 +349,8 @@ export function colorizeStatus(line, status) {
 
 export function renderStatus(status, width = 120, options = {}) {
   const isAgy = String(status.cli || '').toLowerCase() === 'agy';
-  const directory = `cwd ${status.project || '?'}`;
+  const directory = status.directory || status.project || '?';
+
   const branch = status.branch ? `${status.branch}${status.dirty ? '*' : ''}` : '';
   const model = status.effort ? `${status.model}/${status.effort}` : status.model;
   const session = status.title || (status.sessionId

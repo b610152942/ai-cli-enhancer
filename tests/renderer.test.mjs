@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { normalizeStatus, renderStatus } from '../src/runtime/renderer.mjs';
+import { normalizeStatus, renderStatus, formatDirectory } from '../src/runtime/renderer.mjs';
 
 test('renders only useful normalized fields without ANSI colors', () => {
   const line = renderStatus({
@@ -11,9 +11,10 @@ test('renders only useful normalized fields without ANSI colors', () => {
     model: 'gpt-5.6-sol', effort: 'xhigh', contextPercent: 27,
     agentCount: 2, permission: 'bypassPermissions',
   }, 120);
-  assert.equal(line, '[RUN] cwd demo | gpt-5.6-sol/xhigh | ctx 27% | develop* | agents 2 | unrestricted');
+  assert.equal(line, '[RUN] demo | gpt-5.6-sol/xhigh | ctx 27% | develop* | agents 2 | unrestricted');
   assert.equal(line.includes('\u001b'), false);
 });
+
 
 test('keeps one line and drops optional fields on narrow terminals', () => {
   const line = renderStatus({
@@ -49,7 +50,8 @@ test('uses a compact home marker for the current directory', () => {
   try {
     const status = normalizeStatus({ cwd: '/home/example-user', model: 'gemini-test' }, 'Agy');
     assert.equal(status.project, '~');
-    assert.equal(renderStatus(status), '[READY] new | gemini-test | cwd ~');
+    assert.equal(status.directory, '~');
+    assert.equal(renderStatus(status), '[READY] new | gemini-test | ~');
   } finally {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
@@ -64,7 +66,7 @@ test('Agy shows session, directory, context, agents, and a compact model', () =>
     model: 'gemini-test', effort: 'high', contextPercent: 12,
     agentCount: 2, permission: '',
   });
-  assert.equal(line, '[RUN] new | gemini-test high | cwd demo | ctx 12% | agents 2');
+  assert.equal(line, '[RUN] new | gemini-test high | demo | ctx 12% | agents 2');
 });
 
 test('renders a sanitized title and exact context tokens when provided', () => {
@@ -80,7 +82,7 @@ test('renders a sanitized title and exact context tokens when provided', () => {
     },
   }, 'Agy');
   assert.equal(status.title, 'Fix auth module');
-  assert.equal(renderStatus(status), '[READY] Fix auth module | gemini-test | cwd ? | ctx 24.5k/1M (2%)');
+  assert.equal(renderStatus(status), '[READY] Fix auth module | gemini-test | ? | ctx 24.5k/1M (2%)');
 });
 
 test('CodeBuddy accurately renders current_usage (136.7k) instead of cumulative session total (4.2M)', () => {
@@ -105,7 +107,8 @@ test('CodeBuddy accurately renders current_usage (136.7k) instead of cumulative 
   }, 'CodeBuddy');
   assert.equal(status.contextTokens, 136698);
   assert.equal(status.contextPercent, 14);
-  assert.equal(renderStatus(status), '[READY] Add Amap MCP config to CodeBuddy | cwd 国庆 | Deepseek-V4-Pro | ctx 136.7k/1M (14%) | unrestricted');
+  assert.equal(status.directory, 'D:/AI项目开发/国庆');
+  assert.equal(renderStatus(status), '[READY] Add Amap MCP config to CodeBuddy | D:/AI项目开发/国庆 | Deepseek-V4-Pro | ctx 136.7k/1M (14%) | unrestricted');
 });
 
 test('Claude Code includes cached tokens in current_usage for context calculation', () => {
@@ -129,7 +132,7 @@ test('Claude Code includes cached tokens in current_usage for context calculatio
   }, 'Claude');
   assert.equal(status.contextTokens, 53500);
   assert.equal(status.contextPercent, 27);
-  assert.equal(renderStatus(status), '[READY] Implement search | cwd project | claude-3-7-sonnet | ctx 53.5k/200k (27%)');
+  assert.equal(renderStatus(status), '[READY] Implement search | /workspace/project | claude-3-7-sonnet | ctx 53.5k/200k (27%)');
 });
 
 test('Defends against cumulative overflow when only total_input_tokens exceeds context_window_size', () => {
@@ -147,7 +150,7 @@ test('Defends against cumulative overflow when only total_input_tokens exceeds c
   }, 'CodeBuddy');
   assert.equal(status.contextTokens, 30000); // 200000 * 15%
   assert.equal(status.contextPercent, 15);
-  assert.equal(renderStatus(status), '[READY] Overflow check | cwd test | test-model | ctx 30k/200k (15%)');
+  assert.equal(renderStatus(status), '[READY] Overflow check | /workspace/test | test-model | ctx 30k/200k (15%)');
 });
 
 test('Agy uses one line when all conversation details fit', () => {
@@ -157,7 +160,7 @@ test('Agy uses one line when all conversation details fit', () => {
     contextTokens: 25000, contextWindow: 1000000, contextPercent: 3,
     agentCount: 2, permission: '',
   }, 120);
-  assert.equal(line, '[RUN] Fix auth | 3.8 Flash High | cwd demo | ctx 25k/1M (3%) | main | agents 2');
+  assert.equal(line, '[RUN] Fix auth | 3.8 Flash High | demo | ctx 25k/1M (3%) | main | agents 2');
   assert.equal(line.includes('\n'), false);
 });
 
@@ -167,14 +170,14 @@ test('Agy keeps session, directory, and exact context on a narrow terminal', () 
     model: 'Gemini 3.8 Flash (High)', effort: '', title: '', sessionId: '',
     contextTokens: 0, contextWindow: 1000000, contextPercent: 0,
     agentCount: 0, permission: '',
-  }, 50);
-  assert.equal(line, '[READY] new | 3.8 Flash High\ncwd ~ | ctx 0/1M (0%)');
-  assert.ok(line.split('\n').every((part) => part.length <= 50));
+  }, 40);
+  assert.equal(line, '[READY] new | 3.8 Flash High\n~ | ctx 0/1M (0%)');
+  assert.ok(line.split('\n').every((part) => part.length <= 40));
 });
 
 test('falls back to a short session id when no title is available', () => {
   const status = normalizeStatus({ session_id: 'abcdef12-3456', model: 'test-model' }, 'CodeBuddy');
-  assert.equal(renderStatus(status), '[READY] #abcdef12 | cwd ? | test-model');
+  assert.equal(renderStatus(status), '[READY] #abcdef12 | ? | test-model');
 });
 
 test('Agy reads an exact cached metadata title without reading conversation history', () => {
@@ -190,7 +193,7 @@ test('Agy reads an exact cached metadata title without reading conversation hist
     process.env.AI_CLI_ENHANCER_AGY_HOME = root;
     const status = normalizeStatus({ session_id: sessionId, model: 'gemini-test' }, 'Agy');
     assert.equal(status.title, 'Repair Agy display');
-    assert.equal(renderStatus(status), '[READY] Repair Agy display | gemini-test | cwd ?');
+    assert.equal(renderStatus(status), '[READY] Repair Agy display | gemini-test | ?');
   } finally {
     if (previous === undefined) delete process.env.AI_CLI_ENHANCER_AGY_HOME;
     else process.env.AI_CLI_ENHANCER_AGY_HOME = previous;
@@ -199,7 +202,66 @@ test('Agy reads an exact cached metadata title without reading conversation hist
 });
 
 test('Agy labels its compact session fallback explicitly', () => {
-  const status = normalizeStatus({ session_id: '1d1ed82a-9260-4f9e-ae7a-c5ad1f275cb7', model: 'gemini-test' }, 'Agy');
-  assert.equal(status.sessionId, '1d1ed82a-9260-4f9e-ae7a-c5ad1f275cb7');
-  assert.equal(renderStatus(status), '[READY] sid 1d1ed82a | gemini-test | cwd ?');
+  const status = normalizeStatus({ session_id: 'ffffffff-9260-4f9e-ae7a-c5ad1f275cb7', model: 'gemini-test' }, 'Agy');
+  assert.equal(status.sessionId, 'ffffffff-9260-4f9e-ae7a-c5ad1f275cb7');
+  assert.equal(renderStatus(status), '[READY] sid ffffffff | gemini-test | ?');
+});
+
+test('formatDirectory respects home marker and preserves external full path', () => {
+  const previousHome = process.env.HOME;
+  const previousProfile = process.env.USERPROFILE;
+  process.env.HOME = '/home/ubuntu';
+  delete process.env.USERPROFILE;
+  try {
+    assert.equal(formatDirectory('/home/ubuntu'), '~');
+    assert.equal(formatDirectory('/home/ubuntu/projects/code'), '~/projects/code');
+    assert.equal(formatDirectory('/mnt/d/ai项目开发/stm-paisi'), '/mnt/d/ai项目开发/stm-paisi');
+    assert.equal(formatDirectory('D:\\ai-coding\\ai-cli-enhancer'), 'D:/ai-coding/ai-cli-enhancer');
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    if (previousProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = previousProfile;
+  }
+});
+
+test('Agy reads title or preview from conversation_summaries.db', async () => {
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = await import('node:sqlite'));
+  } catch {
+    return;
+  }
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agy-db-'));
+  const previous = process.env.AI_CLI_ENHANCER_AGY_HOME;
+  const session1 = 'session-with-title';
+  const session2 = 'session-with-preview-only';
+  try {
+    const agyDir = path.join(root, '.gemini', 'antigravity-cli');
+    fs.mkdirSync(agyDir, { recursive: true });
+    const dbFile = path.join(agyDir, 'conversation_summaries.db');
+    const db = new DatabaseSync(dbFile);
+    db.exec(`
+      CREATE TABLE conversation_summaries (
+        conversation_id TEXT PRIMARY KEY,
+        title TEXT,
+        preview TEXT
+      );
+      INSERT INTO conversation_summaries (conversation_id, title, preview) VALUES
+        ('session-with-title', 'Optimize Code Execution', 'Initial prompt text'),
+        ('session-with-preview-only', '', '用户首句提问意图：修复状态栏显示');
+    `);
+    db.close();
+
+    process.env.AI_CLI_ENHANCER_AGY_HOME = root;
+    const status1 = normalizeStatus({ session_id: session1, model: 'gemini-test' }, 'Agy');
+    assert.equal(status1.title, 'Optimize Code Execution');
+
+    const status2 = normalizeStatus({ session_id: session2, model: 'gemini-test' }, 'Agy');
+    assert.equal(status2.title, '用户首句提问意图：修复状态栏显示');
+  } finally {
+    if (previous === undefined) delete process.env.AI_CLI_ENHANCER_AGY_HOME;
+    else process.env.AI_CLI_ENHANCER_AGY_HOME = previous;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
