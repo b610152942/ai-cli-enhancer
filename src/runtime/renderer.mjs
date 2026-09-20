@@ -89,6 +89,25 @@ function readRuntimeState(data, cli) {
   }
 }
 
+export function syncSessionTitle(data, cli, title) {
+  if (!title) return;
+  try {
+    const key = sessionKey(data, cli);
+    const file = path.join(stateDir, `${key}.json`);
+    let current = {};
+    try { current = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+    if (current.title !== title) {
+      current.title = title;
+      current.fullTitle = current.fullTitle || title;
+      current.updatedAt = Date.now();
+      fs.mkdirSync(stateDir, { recursive: true });
+      const temp = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(temp, JSON.stringify(current));
+      fs.renameSync(temp, file);
+    }
+  } catch { /* sync is best-effort */ }
+}
+
 function queryAgySqlite(dbFile, sessionId) {
   if (!DatabaseSync || !fs.existsSync(dbFile)) return '';
   try {
@@ -107,7 +126,7 @@ function queryAgySqlite(dbFile, sessionId) {
   return '';
 }
 
-function agyMetadataTitle(sessionId) {
+export function agyMetadataTitle(sessionId) {
   if (!sessionId) return '';
   const cacheFile = path.join(stateDir, `agy-title-${crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 24)}.json`);
   let cached = {};
@@ -316,7 +335,10 @@ export function normalizeStatus(data, cli = 'cli') {
     'conversation_title', 'conversationTitle', 'session_title', 'sessionTitle',
     'session_name', 'sessionName', 'conversation.name', 'session.name',
   ]));
-  const title = suppliedTitle || (String(cli).toLowerCase() === 'agy' ? agyMetadataTitle(sessionId) : '');
+  const title = suppliedTitle || (String(cli).toLowerCase() === 'agy' ? agyMetadataTitle(sessionId) : '') || runtime.title || '';
+  if (title) {
+    syncSessionTitle(data, cli, title);
+  }
   const permission = String(valueAt(data, ['permission_mode', 'permissions.mode', 'approval_mode', 'sandbox']) || '');
   const agentCount = extractAgentCount(data, runtime);
   const contextPercent = context === undefined && contextTokens !== undefined && contextWindow > 0

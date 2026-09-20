@@ -74,6 +74,107 @@ function cleanTitle(value, limit = 30) {
   return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
 }
 
+function cleanTaskTitle(value, limit = 24) {
+  if (!value) return '';
+  let text = String(value)
+    .replace(/<[a-zA-Z0-9_-]+[^>]*>[\s\S]*?<\/[a-zA-Z0-9_-]+>/g, ' ')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0) || '';
+
+  text = text.replace(/^\/[a-zA-Z0-9_-]+\s*/, '');
+  text = text.replace(/[*_~#]+/g, '');
+  text = text.replace(/[\x00-\x1f\x7f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+
+  const clauseMatch = text.match(/^([^，。；！？\n]+)[，。；！？]/);
+  if (clauseMatch && clauseMatch[1].trim().length >= 4 && clauseMatch[1].trim().length <= limit) {
+    return clauseMatch[1].trim();
+  }
+  if (text.length > limit) {
+    return `${text.slice(0, limit - 1)}…`;
+  }
+  return text;
+}
+
+function cleanProjectName(value, limit = 18) {
+  if (!value) return '';
+  const text = String(value).trim();
+  if (text.length > limit) {
+    return `${text.slice(0, limit - 1)}…`;
+  }
+  return text;
+}
+
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 1000) return '';
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds} 秒`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds > 0 ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分钟`;
+}
+
+function buildNotificationContent({
+  cli = 'CLI',
+  project = '',
+  title = '',
+  fullTitle = '',
+  sessionId = '',
+  category = 'complete',
+  needsAnswer = false,
+  elapsed = 0,
+  detail = '',
+} = {}) {
+  const isError = category === 'error';
+  const statusZh = isError
+    ? '执行出错'
+    : (needsAnswer ? '等待确认' : (category === 'complete' ? '任务完成' : '需要关注'));
+
+  const compactTitle = cleanTaskTitle(title, 24);
+  const compactProject = cleanProjectName(project, 18);
+  const shortId = sessionId ? String(sessionId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8) : '';
+
+  let header = `【${cli}`;
+  if (compactProject) {
+    header += ` · ${compactProject}`;
+  } else if (!compactTitle && shortId) {
+    header += ` · #${shortId}`;
+  }
+  header += '】';
+
+  let notifTitle = '';
+  if (compactTitle) {
+    notifTitle = `${header}${compactTitle} · ${statusZh}`;
+  } else {
+    notifTitle = `${header}${statusZh}`;
+  }
+
+  const duration = formatDuration(elapsed);
+  const taskName = fullTitle || title || '';
+  let notifBody = '';
+
+  if (category === 'complete') {
+    if (taskName) {
+      notifBody = `任务「${cleanTaskTitle(taskName, 48)}」已完成${duration ? ` (耗时 ${duration})` : ''}，等待输入。`;
+    } else if (duration) {
+      notifBody = `任务已执行完成 (耗时 ${duration})，等待输入。`;
+    } else {
+      notifBody = '任务已执行完成，等待输入。';
+    }
+  } else if (isError) {
+    notifBody = detail ? `遇到错误：${cleanTaskTitle(detail, 80)}。请切回窗口排查。` : '命令执行遇到异常，请切回窗口排查。';
+  } else if (needsAnswer) {
+    notifBody = detail ? `等待确认：${cleanTaskTitle(detail, 80)}。请切回终端处理。` : '终端等待您的确认或回答，请切回窗口继续。';
+  } else {
+    notifBody = detail ? `提示：${cleanTaskTitle(detail, 80)}。请切回窗口查看。` : 'CLI 需要交互处理，请切回窗口查看。';
+  }
+
+  return { title: notifTitle, body: notifBody };
+}
+
 function piContextColor(percent) {
   if (percent === null || percent === undefined || percent < 70) return 'success';
   if (percent >= 90) return 'error';
@@ -174,9 +275,22 @@ export default function (pi) {
     currentContext = ctx;
     requestRender();
     if (state === 'READY' && startedAt && Date.now() - startedAt >= 30000) {
+      const elapsed = Date.now() - startedAt;
+      const rawTitle = pi.getSessionName?.() || '';
+      const project = path.basename(ctx.cwd);
+      const sessionId = String(ctx.sessionManager.getSessionId?.() || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8);
+      const notif = buildNotificationContent({
+        cli: 'Pi',
+        project,
+        title: rawTitle,
+        fullTitle: rawTitle,
+        sessionId,
+        category: 'complete',
+        elapsed,
+      });
       notify('Notify', {
-        session: ctx.sessionManager.getSessionId(), cli: 'Pi', project: path.basename(ctx.cwd),
-        category: 'complete', title: 'Pi complete', body: `${path.basename(ctx.cwd)} is ready for input.`, immediate: false,
+        session: ctx.sessionManager.getSessionId(), cli: 'Pi', project,
+        category: 'complete', title: notif.title, body: notif.body, immediate: false,
         startedAt,
       });
     }
