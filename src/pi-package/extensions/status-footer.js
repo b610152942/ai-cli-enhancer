@@ -77,7 +77,8 @@ function cleanTitle(value, limit = 30) {
 function cleanTaskTitle(value, limit = 24) {
   if (!value) return '';
   let text = String(value)
-    .replace(/<[a-zA-Z0-9_-]+[^>]*>[\s\S]*?<\/[a-zA-Z0-9_-]+>/g, ' ')
+    .replace(/<(local-command-caveat|system-reminder|thinking)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<\/?[a-zA-Z0-9_:-]+[^>]*>/g, ' ')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]+)`/g, '$1')
     .split(/\r?\n/)
@@ -274,25 +275,28 @@ export default function (pi) {
     state = ctx.hasPendingMessages() ? 'RUN' : 'READY';
     currentContext = ctx;
     requestRender();
-    if (state === 'READY' && startedAt && Date.now() - startedAt >= 30000) {
-      const elapsed = Date.now() - startedAt;
-      const rawTitle = pi.getSessionName?.() || '';
-      const project = path.basename(ctx.cwd);
-      const sessionId = String(ctx.sessionManager.getSessionId?.() || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8);
-      const notif = buildNotificationContent({
-        cli: 'Pi',
-        project,
-        title: rawTitle,
-        fullTitle: rawTitle,
-        sessionId,
-        category: 'complete',
-        elapsed,
-      });
-      notify('Notify', {
-        session: ctx.sessionManager.getSessionId(), cli: 'Pi', project,
-        category: 'complete', title: notif.title, body: notif.body, immediate: false,
-        startedAt,
-      });
+    if (state === 'READY') {
+      const turnDuration = startedAt ? Date.now() - startedAt : 0;
+      startedAt = undefined;
+      if (turnDuration >= 30000 && turnDuration < 4 * 60 * 60 * 1000) {
+        const rawTitle = pi.getSessionName?.() || '';
+        const project = path.basename(ctx.cwd);
+        const sessionId = String(ctx.sessionManager.getSessionId?.() || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8);
+        const notif = buildNotificationContent({
+          cli: 'Pi',
+          project,
+          title: rawTitle,
+          fullTitle: rawTitle,
+          sessionId,
+          category: 'complete',
+          elapsed: turnDuration,
+        });
+        notify('Notify', {
+          session: ctx.sessionManager.getSessionId(), cli: 'Pi', project,
+          category: 'complete', title: notif.title, body: notif.body, immediate: false,
+          startedAt: Date.now() - turnDuration,
+        });
+      }
     }
   });
 

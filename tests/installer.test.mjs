@@ -37,6 +37,7 @@ test('install, repeat, disable, enable and uninstall remain reversible', { concu
     const agyHooks = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'config', 'hooks.json'), 'utf8'));
     assert.match(agyHooks['ai-cli-enhancer'].SessionStart[0].command, /^node .*hook\.mjs/);
     assert.doesNotMatch(agyHooks['ai-cli-enhancer'].SessionStart[0].command, /node -e/);
+    assert.match(agyHooks['ai-cli-enhancer'].PreInvocation[0].command, /^node .*hook\.mjs/);
 
     const codebuddyFile = path.join(home, '.codebuddy', 'settings.json');
     let codebuddy = JSON.parse(fs.readFileSync(codebuddyFile, 'utf8'));
@@ -47,7 +48,8 @@ test('install, repeat, disable, enable and uninstall remain reversible', { concu
     const codexInstalled = fs.readFileSync(path.join(home, '.codex', 'config.toml'), 'utf8');
     assert.match(codexInstalled, /thread-title/);
     assert.match(codexInstalled, /current-dir/);
-    assert.match(codexInstalled, /used-tokens/);
+    assert.match(codexInstalled, /context-used/);
+    assert.doesNotMatch(codexInstalled, /used-tokens/);
     const geminiInstalled = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'settings.json'), 'utf8'));
     assert.ok(geminiInstalled.ui.footer.items.includes('workspace'));
     assert.ok(geminiInstalled.ui.footer.items.includes('session-id'));

@@ -60,6 +60,10 @@ function syncManagedTree(source, destination, state, report) {
     const to = path.join(destination, relative);
     const previousHash = state.managedFiles[to];
     if (fs.existsSync(to) && previousHash && sha256(to) !== previousHash) {
+      if (sha256(to) === sha256(from)) {
+        state.managedFiles[to] = sha256(to);
+        continue;
+      }
       report('conflict', `${to} was modified after installation; upgrade skipped it.`);
       continue;
     }
@@ -164,6 +168,12 @@ export async function run(argv = process.argv) {
     const selected = names.map((name) => adapters.get(name));
     if (selected.some((adapter) => adapter.needsRuntime)) {
       syncManagedTree(path.join(projectRoot, 'src', 'runtime'), path.join(installRoot, 'runtime'), state, report);
+      if (args.target === 'windows') {
+        const altRuntime = path.join(os.homedir(), '.local', 'share', 'ai-cli-enhancer', 'runtime');
+        if (fs.existsSync(path.dirname(altRuntime))) {
+          syncManagedTree(path.join(projectRoot, 'src', 'runtime'), altRuntime, state, () => {});
+        }
+      }
     }
     if (selected.some((adapter) => adapter.needsPiPackage)) {
       syncManagedTree(path.join(projectRoot, 'src', 'pi-package'), path.join(installRoot, 'pi-package'), state, report);

@@ -11,6 +11,7 @@ import {
   cleanProjectName,
   formatDuration,
   buildNotificationContent,
+  extractDirectDuration,
 } from '../src/runtime/hook.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -30,6 +31,14 @@ test('agy decision hook always emits valid allow JSON', () => {
   });
   assert.equal(result.status, 0);
   assert.deepEqual(JSON.parse(result.stdout), { decision: 'allow' });
+});
+
+test('agy PreInvocation hook emits valid injectSteps JSON', () => {
+  const result = spawnSync(process.execPath, [hook, '--cli', 'Agy', '--event', 'PreInvocation', '--protocol', 'agy'], {
+    input: '{}', encoding: 'utf8', timeout: 3000,
+  });
+  assert.equal(result.status, 0);
+  assert.deepEqual(JSON.parse(result.stdout), { injectSteps: [] });
 });
 
 test('only answer-required notifications use the prominent form', () => {
@@ -140,6 +149,81 @@ test('hook preserves prompt title across UserPromptSubmit and Stop lifecycle', (
   assert.equal(state.state, 'RUN');
   assert.equal(state.title, '修复状态栏显示');
   assert.equal(state.project, 'stm-paisi');
+
+  try { fs.unlinkSync(statePath); } catch {}
+});
+
+test('cleanTaskTitle strips isolated XML tags like <USER_REQUEST>', () => {
+  assert.equal(
+    cleanTaskTitle('<USER_REQUEST>\n修复状态栏显示，并且排查其他cli是否还存在这样的问题\n</USER_REQUEST>'),
+    '修复状态栏显示'
+  );
+  assert.equal(
+    cleanTaskTitle('<USER_REQUEST>\n消息通知的时候，通知的时间显示运行一千多分钟'),
+    '消息通知的时候'
+  );
+});
+
+test('extractDirectDuration extracts milliseconds or converts seconds', () => {
+  assert.equal(extractDirectDuration({ duration_ms: 12500 }), 12500);
+  assert.equal(extractDirectDuration({ elapsed_ms: 45000 }), 45000);
+  assert.equal(extractDirectDuration({ duration: 32.5 }), 32500);
+  assert.equal(extractDirectDuration({ stats: { duration: 15 } }), 15000);
+  assert.equal(extractDirectDuration({ duration: 65000 }), 65000);
+  assert.equal(extractDirectDuration({}), null);
+});
+
+test('PreInvocation marks answer start time and Stop resets it to null after completion', () => {
+  const sessionId = 'test-turn-duration-' + Date.now();
+  const hash = crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 24);
+  const statePath = path.join(root, 'src', 'runtime', 'state', `${hash}.json`);
+
+  const input = JSON.stringify({ session_id: sessionId, cwd: 'D:/ai-coding/stm-paisi', prompt: '简单计算耗时' });
+  const beforeTime = Date.now();
+  const resPre = spawnSync(process.execPath, [hook, '--cli', 'Agy', '--event', 'PreInvocation', '--protocol', 'agy'], {
+    input, encoding: 'utf8', timeout: 5000,
+  });
+  assert.equal(resPre.status, 0);
+
+  assert.ok(fs.existsSync(statePath));
+  const stateDuringRun = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(stateDuringRun.state, 'RUN');
+  assert.ok(stateDuringRun.startedAt >= beforeTime);
+
+  const resStop = spawnSync(process.execPath, [hook, '--cli', 'Agy', '--event', 'Stop'], {
+    input, encoding: 'utf8', timeout: 5000,
+  });
+  assert.equal(resStop.status, 0);
+
+  const stateAfterStop = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(stateAfterStop.state, 'READY');
+  assert.equal(stateAfterStop.startedAt, null);
+
+  try { fs.unlinkSync(statePath); } catch {}
+});
+
+test('SessionStart sets state READY with startedAt null, preventing stale elapsed time on Stop', () => {
+  const sessionId = 'test-session-start-' + Date.now();
+  const input = JSON.stringify({ session_id: sessionId, cwd: 'D:/ai-coding/stm-paisi' });
+  const resStart = spawnSync(process.execPath, [hook, '--cli', 'Agy', '--event', 'SessionStart'], {
+    input, encoding: 'utf8', timeout: 5000,
+  });
+  assert.equal(resStart.status, 0);
+
+  const hash = crypto.createHash('sha256').update(sessionId).digest('hex').slice(0, 24);
+  const statePath = path.join(root, 'src', 'runtime', 'state', `${hash}.json`);
+  assert.ok(fs.existsSync(statePath));
+  const stateAfterStart = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(stateAfterStart.state, 'READY');
+  assert.equal(stateAfterStart.startedAt, null);
+
+  const resStop = spawnSync(process.execPath, [hook, '--cli', 'Agy', '--event', 'Stop'], {
+    input, encoding: 'utf8', timeout: 5000,
+  });
+  assert.equal(resStop.status, 0);
+  const stateAfterStop = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(stateAfterStop.state, 'READY');
+  assert.equal(stateAfterStop.startedAt, null);
 
   try { fs.unlinkSync(statePath); } catch {}
 });

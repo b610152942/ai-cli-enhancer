@@ -15,6 +15,7 @@ export const agy = {
     delete statusLine.value.padding;
     installJson(ctx, state, 'settings', settingsFile, [statusLine]);
     const start = commandHook(ctx, 'Agy', 'SessionStart', 'agy', direct);
+    const preInvocation = commandHook(ctx, 'Agy', 'PreInvocation', 'agy', direct);
     const stop = commandHook(ctx, 'Agy', 'Stop', 'agy', direct);
     const attention = commandHook(ctx, 'Agy', 'PreToolUse', 'agy', direct);
     installJson(ctx, state, 'hooks', homeFile('.gemini', 'config', 'hooks.json'), [{
@@ -22,6 +23,7 @@ export const agy = {
       value: {
         enabled: true,
         SessionStart: [{ type: 'command', command: start.command, timeout: 3 }],
+        PreInvocation: [{ type: 'command', command: preInvocation.command, timeout: 3 }],
         Stop: [{ type: 'command', command: stop.command, timeout: 3 }],
         PreToolUse: [{
           matcher: 'ask_question',

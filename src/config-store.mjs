@@ -9,7 +9,23 @@ export function clone(value) {
 }
 
 export function equal(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
+  if (a === b) return true;
+  if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i += 1) {
+      if (!equal(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  const keysA = Object.keys(a).sort();
+  const keysB = Object.keys(b).sort();
+  if (keysA.length !== keysB.length) return false;
+  for (let i = 0; i < keysA.length; i += 1) {
+    if (keysA[i] !== keysB[i] || !equal(a[keysA[i]], b[keysB[i]])) return false;
+  }
+  return true;
 }
 
 export function readJson(file, fallback = {}) {

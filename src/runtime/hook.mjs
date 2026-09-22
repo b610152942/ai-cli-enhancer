@@ -62,7 +62,8 @@ function projectName(data) {
 export function cleanTaskTitle(value, limit = 24) {
   if (!value) return '';
   let text = String(value)
-    .replace(/<[a-zA-Z0-9_-]+[^>]*>[\s\S]*?<\/[a-zA-Z0-9_-]+>/g, ' ')
+    .replace(/<(local-command-caveat|system-reminder|thinking)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<\/?[a-zA-Z0-9_:-]+[^>]*>/g, ' ')
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/`([^`]+)`/g, '$1')
     .split(/\r?\n/)
@@ -92,6 +93,40 @@ export function cleanProjectName(value, limit = 18) {
   }
   return text;
 }
+
+export function extractDirectDuration(data) {
+  if (!data || typeof data !== 'object') return null;
+
+  const msCandidates = [
+    'duration_ms', 'durationMs', 'elapsed_ms', 'elapsedMs',
+    'turn_duration_ms', 'turnDurationMs', 'execution_time_ms', 'executionTimeMs',
+    'stats.duration_ms', 'stats.durationMs', 'stats.elapsed_ms', 'stats.elapsedMs',
+    'metrics.duration_ms', 'metrics.durationMs', 'metrics.elapsed_ms', 'metrics.elapsedMs',
+    'usage.duration_ms', 'usage.durationMs',
+  ];
+  for (const key of msCandidates) {
+    let val = data;
+    for (const part of key.split('.')) val = val?.[part];
+    const num = Number(val);
+    if (Number.isFinite(num) && num > 0) return num;
+  }
+
+  const secCandidates = [
+    'duration', 'elapsed', 'execution_time', 'executionTime',
+    'stats.duration', 'stats.elapsed', 'metrics.duration', 'metrics.elapsed',
+  ];
+  for (const key of secCandidates) {
+    let val = data;
+    for (const part of key.split('.')) val = val?.[part];
+    const num = Number(val);
+    if (Number.isFinite(num) && num > 0) {
+      return num < 1000 ? Math.round(num * 1000) : Math.round(num);
+    }
+  }
+
+  return null;
+}
+
 
 export function formatDuration(ms) {
   if (!Number.isFinite(ms) || ms < 1000) return '';
@@ -202,7 +237,7 @@ function handle(data) {
     writeState(session, {
       ...previous,
       state: 'RUN', agentCount: count,
-      startedAt: previous.startedAt || previous.updatedAt || Date.now(), updatedAt: Date.now(),
+      startedAt: previous.startedAt || Date.now(), updatedAt: Date.now(),
     });
     return;
   }
@@ -214,12 +249,24 @@ function handle(data) {
       ...previous,
       state: count > 0 ? 'RUN' : (previous.state || 'RUN'),
       agentCount: count,
-      startedAt: previous.startedAt || previous.updatedAt || Date.now(), updatedAt: Date.now(),
+      startedAt: previous.startedAt || Date.now(), updatedAt: Date.now(),
     });
     return;
   }
 
-  if (/userprompt|beforeagent|agent_start|sessionstart/.test(lower)) {
+  if (/sessionstart/.test(lower)) {
+    const previous = readState(session);
+    writeState(session, {
+      ...previous,
+      state: 'READY',
+      startedAt: null,
+      project: project || previous.project || '',
+      updatedAt: Date.now(),
+    });
+    return;
+  }
+
+  if (/userprompt|beforeagent|agent_start|preinvocation/.test(lower)) {
     const now = Date.now();
     const previous = readState(session);
     const rawPrompt = first(data, ['prompt', 'user_prompt', 'message']);
@@ -290,13 +337,26 @@ function handle(data) {
       writeState(session, {
         ...previous,
         state: 'RUN', agentCount: activeAgents,
-        startedAt: previous.startedAt || previous.updatedAt || Date.now(), updatedAt: Date.now(),
+        startedAt: previous.startedAt || Date.now(), updatedAt: Date.now(),
       });
       return;
     }
-    writeState(session, { ...previous, state: 'READY', updatedAt: Date.now() });
-    const startedAt = previous.startedAt || previous.updatedAt;
-    if (!startedAt || Date.now() - startedAt < 30000) return;
+    writeState(session, {
+      ...previous,
+      state: 'READY',
+      startedAt: null,
+      updatedAt: Date.now(),
+    });
+
+    let elapsed = extractDirectDuration(data);
+    if (!elapsed && previous.startedAt && previous.state === 'RUN') {
+      const diff = Date.now() - previous.startedAt;
+      if (diff >= 0 && diff < 2 * 60 * 60 * 1000) {
+        elapsed = diff;
+      }
+    }
+
+    if (!elapsed || elapsed < 30000) return;
 
     const suppliedTitle = cleanTaskTitle(first(data, [
       'conversation_title', 'conversationTitle', 'title', 'session_title', 'sessionTitle', 'session_name', 'sessionName',
@@ -305,9 +365,8 @@ function handle(data) {
     if (!title && String(cli).toLowerCase() === 'agy') {
       try { title = agyMetadataTitle(session) || ''; } catch {}
     }
-    const fullTitle = previous.fullTitle || title;
+    const fullTitle = suppliedTitle || previous.fullTitle || title || '';
     const proj = project || previous.project || '';
-    const elapsed = Date.now() - startedAt;
 
     const { title: notifTitle, body: notifBody } = buildNotificationContent({
       cli,
@@ -322,7 +381,7 @@ function handle(data) {
     dispatchNotification('Notify', {
       session, cli, project: proj, category: 'complete', title: notifTitle,
       body: notifBody, immediate: false,
-      startedAt,
+      startedAt: Date.now() - elapsed,
     });
   }
 
@@ -334,10 +393,23 @@ export function main() {
     if (data) handle(data);
     const protocol = arg('protocol');
     if (protocol === 'gemini') process.stdout.write('{}\n');
-    if (protocol === 'agy') process.stdout.write(arg('event').toLowerCase() === 'pretooluse' ? '{"decision":"allow"}\n' : '{}\n');
+    if (protocol === 'agy') {
+      const ev = arg('event').toLowerCase();
+      if (ev === 'preinvocation') {
+        process.stdout.write('{"injectSteps":[]}\n');
+      } else if (ev === 'pretooluse') {
+        process.stdout.write('{"decision":"allow"}\n');
+      } else {
+        process.stdout.write('{}\n');
+      }
+    }
   } catch {
     const protocol = arg('protocol');
-    if (protocol === 'gemini' || protocol === 'agy') process.stdout.write('{}\n');
+    if (protocol === 'gemini') process.stdout.write('{}\n');
+    if (protocol === 'agy') {
+      const ev = arg('event').toLowerCase();
+      process.stdout.write(ev === 'preinvocation' ? '{"injectSteps":[]}\n' : '{}\n');
+    }
   }
 }
 
