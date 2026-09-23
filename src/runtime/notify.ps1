@@ -36,21 +36,10 @@ public static class EnhancerForegroundWindow {
     }
 
     $category = [string]$payload.category
-    if (-not $payload.immediate) {
-        if (-not $payload.startedAt) { exit 0 }
-        $elapsed = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - [int64]$payload.startedAt
-        if ($elapsed -lt 30000) { exit 0 }
-        [uint32]$foregroundPid = 0
-        [void][EnhancerForegroundWindow]::GetWindowThreadProcessId([IntPtr]$foreground, [ref]$foregroundPid)
-        $foregroundName = if ($foregroundPid) { (Get-Process -Id $foregroundPid -ErrorAction SilentlyContinue).ProcessName } else { "" }
-        $workProcesses = @("WindowsTerminal", "wt", "OpenConsole", "conhost", "cmd", "powershell", "pwsh", "Code", "wezterm-gui", "alacritty", "mintty")
-        if ($workProcesses -contains $foregroundName) { exit 0 }
-    }
-
     $stampFile = Join-Path $stateRoot "$hash-$category.stamp"
     if (Test-Path -LiteralPath $stampFile) {
         $age = (Get-Date) - (Get-Item -LiteralPath $stampFile).LastWriteTime
-        if ($age.TotalSeconds -lt 30) { exit 0 }
+        if ($age.TotalSeconds -lt 3) { exit 0 }
     }
     Set-Content -LiteralPath $stampFile -Value ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()) -Encoding ASCII
 

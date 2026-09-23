@@ -35,12 +35,19 @@ function windowsFileToWslUrl(file) {
 
 function runtimeCommand(ctx, moduleName, args) {
   const file = runtimeFile(ctx, moduleName);
-  if (ctx.target !== 'windows') return command('node', file, ...args);
-  const windowsUrl = pathToFileURL(file).href;
-  const wslUrl = windowsFileToWslUrl(file);
-  if (!wslUrl) return command('node', file, ...args);
-  const loader = `import(process.platform==='win32'?'${windowsUrl}':'${wslUrl}').then(function(m){m.main()})`;
-  return command('node', '-e', loader, '--', ...args);
+  if (ctx.target === 'windows') {
+    const windowsUrl = pathToFileURL(file).href;
+    const wslUrl = windowsFileToWslUrl(file);
+    if (!wslUrl) return command('node', file, ...args);
+    const loader = `import(process.platform==='win32'?'${windowsUrl}':'${wslUrl}').then(function(m){m.main()})`;
+    return command('node', '-e', loader, '--', ...args);
+  }
+  if (process.platform === 'win32') {
+    const wslPath = file.match(/^([A-Za-z]):[\\/](.*)$/);
+    const linuxPath = wslPath ? `/mnt/${wslPath[1].toLowerCase()}/${wslPath[2].replaceAll('\\', '/')}` : file;
+    return command('node', linuxPath, ...args);
+  }
+  return command('node', file, ...args);
 }
 
 function directRuntimeCommand(ctx, moduleName, args) {
@@ -112,7 +119,23 @@ export function isWindowsOwnedSharedConfig(ctx, adapterState, file) {
   let real;
   try { real = fs.realpathSync(file).replaceAll('\\', '/'); } catch { return false; }
   const match = real.match(/^\/mnt\/([a-z])\/Users\/([^/]+)\//i);
-  if (!match) return false;
+  if (!match) {
+    if (process.platform === 'win32' && !process.env.AI_CLI_ENHANCER_HOME) {
+      const winMatch = real.match(/^([a-z]):\/Users\/([^/]+)\//i);
+      if (winMatch) {
+        const drive = winMatch[1].toUpperCase();
+        const user = winMatch[2];
+        const windowsState = `${drive}:/Users/${user}/AppData/Local/AI-CLI-Enhancer/state.json`;
+        if (fs.existsSync(windowsState)) {
+          adapterState.configs = {};
+          adapterState.sharedWithWindows = true;
+          ctx.report('info', `${file} is shared with Windows; Windows owns its enhancer configuration.`);
+          return true;
+        }
+      }
+    }
+    return false;
+  }
   const windowsState = `/mnt/${match[1].toLowerCase()}/Users/${match[2]}/AppData/Local/AI-CLI-Enhancer/state.json`;
   let managedByWindows = fs.existsSync(windowsState);
   if (!managedByWindows) {

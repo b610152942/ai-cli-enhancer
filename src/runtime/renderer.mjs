@@ -5,12 +5,9 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-let DatabaseSync = null;
-try {
-  ({ DatabaseSync } = await import('node:sqlite'));
-} catch {
-  // node:sqlite unsupported or unavailable
-}
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const runtimeDir = path.dirname(fileURLToPath(import.meta.url));
 const stateDir = path.join(runtimeDir, 'state');
@@ -108,7 +105,19 @@ export function syncSessionTitle(data, cli, title) {
   } catch { /* sync is best-effort */ }
 }
 
+let DatabaseSyncClass = undefined;
+function getDatabaseSync() {
+  if (DatabaseSyncClass !== undefined) return DatabaseSyncClass;
+  try {
+    DatabaseSyncClass = require('node:sqlite').DatabaseSync;
+  } catch {
+    DatabaseSyncClass = null;
+  }
+  return DatabaseSyncClass;
+}
+
 function queryAgySqlite(dbFile, sessionId) {
+  const DatabaseSync = getDatabaseSync();
   if (!DatabaseSync || !fs.existsSync(dbFile)) return '';
   try {
     const db = new DatabaseSync(dbFile, { readOnly: true });

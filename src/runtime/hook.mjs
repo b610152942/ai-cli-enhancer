@@ -356,7 +356,8 @@ function handle(data) {
       }
     }
 
-    if (!elapsed || elapsed < 30000) return;
+    // Notify on task completion (ignore sub-3-second instant responses to reduce chatter)
+    if (elapsed && elapsed < 3000) return;
 
     const suppliedTitle = cleanTaskTitle(first(data, [
       'conversation_title', 'conversationTitle', 'title', 'session_title', 'sessionTitle', 'session_name', 'sessionName',
@@ -381,7 +382,7 @@ function handle(data) {
     dispatchNotification('Notify', {
       session, cli, project: proj, category: 'complete', title: notifTitle,
       body: notifBody, immediate: false,
-      startedAt: Date.now() - elapsed,
+      startedAt: Date.now() - (elapsed || 0),
     });
   }
 

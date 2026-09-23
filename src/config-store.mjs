@@ -103,8 +103,11 @@ export function applyJsonPatches(file, patches, record = {}, report = () => {}) 
     const saved = record.values[id];
     const matchesRestored = saved && (saved.previousExists ? equal(current, saved.previous) : current === MISSING);
     if (saved && !equal(current, saved.installed) && !matchesRestored) {
-      report('conflict', `${file}: ${id} was changed after installation; keeping the user's value.`);
-      continue;
+      const isManagedEnhancer = JSON.stringify(current).includes('ai-cli-enhancer') || JSON.stringify(current).includes('AI-CLI-Enhancer');
+      if (!isManagedEnhancer) {
+        report('conflict', `${file}: ${id} was changed after installation; keeping the user's value.`);
+        continue;
+      }
     }
     if (!saved) {
       record.values[id] = {
@@ -163,8 +166,11 @@ export function addManagedHooks(file, hookGroups, record = {}, report = () => {}
       if (index >= 0) {
         const previousInstalled = record.hookEntries[marker];
         if (previousInstalled && !equal(config.hooks[event][index], previousInstalled)) {
-          report('conflict', `${file}: hook ${marker} was changed after installation; keeping the user's value.`);
-          continue;
+          const isManagedEnhancer = JSON.stringify(config.hooks[event][index]).includes('ai-cli-enhancer') || JSON.stringify(config.hooks[event][index]).includes('AI-CLI-Enhancer');
+          if (!isManagedEnhancer) {
+            report('conflict', `${file}: hook ${marker} was changed after installation; keeping the user's value.`);
+            continue;
+          }
         }
         if (!equal(config.hooks[event][index], clean)) {
           config.hooks[event][index] = clean;

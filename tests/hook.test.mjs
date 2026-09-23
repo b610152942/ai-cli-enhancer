@@ -227,3 +227,12 @@ test('SessionStart sets state READY with startedAt null, preventing stale elapse
 
   try { fs.unlinkSync(statePath); } catch {}
 });
+
+test('hook execution does not output experimental SQLite warnings', () => {
+  const input = JSON.stringify({ session_id: 'test-warning-' + Date.now(), cwd: 'D:/ai-coding/stm-paisi' });
+  const res = spawnSync(process.execPath, [hook, '--cli', 'CodeBuddy', '--event', 'UserPromptSubmit'], {
+    input, encoding: 'utf8', timeout: 5000,
+  });
+  assert.equal(res.status, 0);
+  assert.doesNotMatch(res.stderr, /ExperimentalWarning: SQLite/);
+});
