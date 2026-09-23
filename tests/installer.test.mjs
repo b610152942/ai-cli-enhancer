@@ -50,6 +50,7 @@ test('install, repeat, disable, enable and uninstall remain reversible', { concu
     assert.match(codexInstalled, /current-dir/);
     assert.match(codexInstalled, /context-used/);
     assert.doesNotMatch(codexInstalled, /used-tokens/);
+    assert.match(codexInstalled, /notification_condition = "always"/);
     const geminiInstalled = JSON.parse(fs.readFileSync(path.join(home, '.gemini', 'settings.json'), 'utf8'));
     assert.ok(geminiInstalled.ui.footer.items.includes('workspace'));
     assert.ok(geminiInstalled.ui.footer.items.includes('session-id'));

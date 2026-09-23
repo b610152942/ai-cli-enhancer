@@ -18,7 +18,7 @@ function notify(mode, payload) {
     const directScript = windowsPath(notifyScript);
     const scriptArgs = directScript
       ? ['-File', directScript, '-Mode', mode, '-PayloadBase64', encoded]
-      : ['-Command', "& (Join-Path $env:LOCALAPPDATA 'AI-CLI-Enhancer\\runtime\\notify.ps1') -Mode $env:AI_CLI_ENHANCER_NOTIFY_MODE -PayloadBase64 $env:AI_CLI_ENHANCER_NOTIFY_PAYLOAD"];
+      : ['-Command', `& (Join-Path $env:LOCALAPPDATA 'AI-CLI-Enhancer\\runtime\\notify.ps1') -Mode ${mode} -PayloadBase64 ${encoded}`];
     spawnSync('powershell.exe', [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
       ...scriptArgs,
@@ -26,11 +26,6 @@ function notify(mode, payload) {
       windowsHide: true,
       stdio: 'ignore',
       timeout: 2500,
-      env: {
-        ...process.env,
-        AI_CLI_ENHANCER_NOTIFY_MODE: mode,
-        AI_CLI_ENHANCER_NOTIFY_PAYLOAD: encoded,
-      },
     });
   } catch { /* notifications never affect Pi */ }
 }
@@ -278,7 +273,7 @@ export default function (pi) {
     if (state === 'READY') {
       const turnDuration = startedAt ? Date.now() - startedAt : 0;
       startedAt = undefined;
-      if (turnDuration >= 30000 && turnDuration < 4 * 60 * 60 * 1000) {
+      if (turnDuration >= 3000 && turnDuration < 4 * 60 * 60 * 1000) {
         const rawTitle = pi.getSessionName?.() || '';
         const project = path.basename(ctx.cwd);
         const sessionId = String(ctx.sessionManager.getSessionId?.() || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8);

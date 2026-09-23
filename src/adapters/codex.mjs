@@ -2,7 +2,7 @@ import { homeFile, installToml, restoreAll, isWindowsOwnedSharedConfig } from '.
 
 export const codex = {
   id: 'codex',
-  description: 'Codex native TUI status and unfocused notifications',
+  description: 'Codex native TUI status and task completion notifications',
   needsRuntime: false,
   install(ctx, state) {
     const file = homeFile('.codex', 'config.toml');
@@ -12,7 +12,7 @@ export const codex = {
       terminal_title: '["run-state", "thread-title", "project-name"]',
       notifications: 'true',
       notification_method: '"auto"',
-      notification_condition: '"unfocused"',
+      notification_condition: '"always"',
     });
   },
   disable(ctx, state) { restoreAll(state, ctx.report); },
