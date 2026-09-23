@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const localScript = path.join(path.dirname(fileURLToPath(import.meta.url)), 'notify.ps1');
@@ -18,14 +18,13 @@ export function dispatchNotification(mode, payload) {
     const scriptArgs = directScript
       ? ['-File', directScript, '-Mode', mode, '-PayloadBase64', encoded]
       : ['-Command', `& (Join-Path $env:LOCALAPPDATA 'AI-CLI-Enhancer\\runtime\\notify.ps1') -Mode ${mode} -PayloadBase64 ${encoded}`];
-    const child = spawn('powershell.exe', [
+    spawnSync('powershell.exe', [
       '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', ...scriptArgs,
     ], {
       windowsHide: true,
       stdio: 'ignore',
-      detached: true,
+      timeout: 2500,
     });
-    child.unref();
   } catch {
     // Notifications are best-effort and must never affect the CLI.
   }
